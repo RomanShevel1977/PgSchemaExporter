@@ -1,0 +1,24 @@
+{
+  "connectionString": "Host=localhost;Database=mydb;Username=postgres;Password=123",
+  "outputDirectory": "./db-schema",
+  "schemas": ["public"],
+  "excludeSchemas": ["pg_catalog", "information_schema"],
+  "cleanOutputDirectory": true,
+  "include": {
+    "schemas": true,
+    "extensions": true,
+    "types": true,
+    "sequences": true,
+    "tables": true,
+    "constraints": true,
+    "indexes": true,
+    "views": true,
+    "functions": true
+  },
+  "format": {
+    "useIfNotExists": true,
+    "splitConstraints": true,
+    "splitIndexes": true,
+    "uppercaseKeywords": true
+  }
+}
