@@ -45,20 +45,6 @@ db-schema/
 
 ---
 
-## Before vs After
-
-### ❌ pg_dump
-- 50,000 lines
-- impossible to review
-- no structure
-
-### ✅ PgSchemaExporter
-- one file per table
-- clean diffs
-- readable SQL
-
----
-
 ## ✅ The Solution
 
 This tool converts your database into:
@@ -80,6 +66,21 @@ This tool converts your database into:
 * Perfect for Git versioning
 
 ---
+
+## Before vs After
+
+### ❌ pg_dump
+- 50,000 lines
+- impossible to review
+- no structure
+
+### ✅ PgSchemaExporter
+- one file per table
+- clean diffs
+- readable SQL
+
+---
+
 
 ### 🔄 Split Existing pg_dump
 
