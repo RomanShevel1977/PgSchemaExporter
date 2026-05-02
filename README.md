@@ -1,101 +1,249 @@
-# PostgreSQL Git-Native Schema Exporter
+# 🐘 PostgreSQL Git-Native Schema Exporter
 
-CLI tool that exports a PostgreSQL schema into a structured Git-friendly SQL project.
+> Turn your PostgreSQL database into clean, structured, Git-friendly code.
 
-## Features
+Stop fighting with massive `pg_dump` files.
+Start managing your database like a real software project.
 
-- Schemas
-- Extensions
-- Enum types
-- Sequences
-- Tables
-- Constraints
-- Indexes
-- Views
-- Functions
-- `deploy.sql`
+---
 
-## Build
+## 🚀 Overview
 
-```bash
-dotnet build
+**PostgreSQL Git-Native Schema Exporter** is a CLI tool that transforms:
+
+* a live PostgreSQL database
+* or an existing `pg_dump` file
+
+into a structured, readable, version-controllable SQL project.
+
+Instead of a single unreadable SQL dump, you get:
+
+```
+db-schema/
+├── schemas/
+├── tables/
+├── indexes/
+├── constraints/
+├── views/
+├── functions/
+├── types/
+├── sequences/
+└── deploy.sql
 ```
 
-## Run
+---
+
+## ❌ The Problem
+
+`pg_dump` is powerful — but painful:
+
+* One huge SQL file (10k–100k+ lines)
+* Impossible to review in Git
+* Hard to debug changes
+* No logical structure
+* Not CI/CD friendly
+
+---
+
+## ✅ The Solution
+
+This tool converts your database into:
+
+* 📁 **Structured folders**
+* 📄 **One file per object**
+* 🔍 **Clean Git diffs**
+* ⚙️ **Deploy-ready scripts**
+
+---
+
+## ✨ Features
+
+### 🧱 Git-Native Schema Export
+
+* Splits schema into atomic files
+* Logical directory structure
+* Human-readable SQL
+* Perfect for Git versioning
+
+---
+
+### 🔄 Split Existing pg_dump
+
+Already have a dump?
 
 ```bash
-dotnet run --project src/PgSchemaExporter.Cli -- export \
+pgschema-export split-dump --input schema.sql --output ./db-schema
+```
+
+No database connection required.
+
+---
+
+### 🧠 Safe SQL Parsing
+
+Handles complex PostgreSQL syntax:
+
+* `$$ function bodies $$`
+* strings and escaped quotes
+* comments (`--`, `/* */`)
+* multi-line SQL blocks
+
+---
+
+### ⚡ CLI First
+
+* Lightweight
+* Scriptable
+* CI/CD ready
+* Cross-platform (.NET)
+
+---
+
+## 🛠 Usage
+
+### Export from PostgreSQL
+
+```bash
+pgschema-export export \
   --connection "Host=localhost;Database=mydb;Username=postgres;Password=123" \
   --output "./db-schema" \
   --schemas public \
   --clean
 ```
 
-## Run with config
+---
 
-```bash
-dotnet run --project src/PgSchemaExporter.Cli -- export --config pgschema-export.example.json
-```
-
-## Output
-
-```text
-db-schema/
-  README.md
-  deploy.sql
-  extensions/
-  schemas/
-  types/
-  sequences/
-  tables/
-  constraints/
-  indexes/
-  views/
-  functions/
-```
-
-## Publish single file
-
-Windows:
-
-```bash
-dotnet publish src/PgSchemaExporter.Cli -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true -o publish/win-x64
-```
-
-Linux:
-
-```bash
-dotnet publish src/PgSchemaExporter.Cli -c Release -r linux-x64 --self-contained true /p:PublishSingleFile=true -o publish/linux-x64
-```
-
-
-## Split existing pg_dump file
-
-Recommended dump format:
+### Split pg_dump
 
 ```bash
 pg_dump --schema-only --no-owner --no-privileges --file schema.sql mydb
-```
 
-Split it:
-
-```bash
-dotnet run --project src/PgSchemaExporter.Cli -- split-dump \
+pgschema-export split-dump \
   --input "./schema.sql" \
   --output "./db-schema" \
   --clean
 ```
 
-Supported in MVP:
+---
 
-- `CREATE SCHEMA`
-- `CREATE EXTENSION`
-- `CREATE TYPE`
-- `CREATE SEQUENCE`
-- `CREATE TABLE`
-- `ALTER TABLE ... ADD CONSTRAINT`
-- `CREATE INDEX`
-- `CREATE VIEW`
-- `CREATE FUNCTION`
+## 📦 Output Structure
 
-The splitter handles semicolons inside strings, comments and dollar-quoted function bodies.
+```
+db-schema/
+├── tables/
+│   └── public.users.sql
+├── indexes/
+│   └── public.users.indexes.sql
+├── constraints/
+│   └── public.users.constraints.sql
+├── views/
+│   └── public.active_users.sql
+├── functions/
+│   └── public.normalize_email.sql
+├── types/
+├── sequences/
+└── deploy.sql
+```
+
+---
+
+## 💡 Use Cases
+
+* Git-based schema versioning
+* Code review for database changes
+* CI/CD pipelines
+* Safe environment replication
+* Refactoring legacy databases
+* Dev ↔ Prod synchronization
+
+---
+
+## 🧪 Recommended pg_dump Options
+
+```bash
+pg_dump \
+  --schema-only \
+  --no-owner \
+  --no-privileges \
+  --file schema.sql \
+  mydb
+```
+
+---
+
+## ⚠️ Limitations (MVP)
+
+Currently optimized for schema-only dumps.
+
+Not fully supported yet:
+
+* `COPY` / data migration
+* `GRANT` / permissions
+* ownership metadata
+* complex extensions
+
+---
+
+## 🔮 Roadmap
+
+* Dependency-aware ordering
+* Data migration engine (COPY)
+* Smart anonymization (GDPR-safe)
+* VS Code extension
+* CI/CD integrations
+* Schema diff engine
+
+---
+
+## 🧠 Philosophy
+
+> Your database schema is code. Treat it like code.
+
+This tool brings:
+
+* clarity
+* structure
+* maintainability
+
+to PostgreSQL workflows.
+
+---
+
+## 🏗 Tech Stack
+
+* .NET 8 / 9
+* C#
+* Npgsql
+* Cross-platform CLI
+
+---
+
+## 👨‍💻 Author
+
+Built by a developer who was tired of:
+
+* unreadable dumps
+* broken migrations
+* and debugging SQL in 50k-line files
+
+---
+
+## ⭐ Support
+
+If this project helps you:
+
+* ⭐ Star the repo
+* 🐛 Report issues
+* 💡 Suggest features
+
+---
+
+## 📜 License
+
+MIT (or your chosen license)
+
+---
+
+## 🔥 One-line Pitch
+
+> "Make PostgreSQL behave like a real codebase."
