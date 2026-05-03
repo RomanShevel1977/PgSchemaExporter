@@ -6,6 +6,12 @@ Git-native PostgreSQL schema exporter and `pg_dump` splitter.
 
 ---
 
+## 🎬 Demo
+
+![demo](./docs/demo.gif)
+
+---
+
 ## 🚀 Why this exists
 
 If you've ever tried to use `pg_dump` with Git, you know the pain:
