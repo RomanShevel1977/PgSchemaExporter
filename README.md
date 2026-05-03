@@ -56,6 +56,26 @@ This tool converts your database into:
 
 ---
 
+## 🧠 Why not just pg_dump?
+
+`pg_dump` is great for backups.
+
+PgSchemaExporter is focused on development workflows:
+- readable schema structure
+- clean Git diffs
+- code review
+- CI/CD-friendly output
+
+---
+
+## 🚧 Project Status
+
+This project is in early public release (`v0.5.0`).
+
+It is usable for schema export and pg_dump splitting, but APIs and output format may still change before `v1.0.0`.
+
+---
+
 ## ✨ Features
 
 ### 🧱 Git-Native Schema Export
@@ -111,6 +131,22 @@ Handles complex PostgreSQL syntax:
 * Scriptable
 * CI/CD ready
 * Cross-platform (.NET)
+
+---
+
+## 📥 Install
+
+Download the latest binary from the [Releases](../../releases) page.
+
+### Windows
+
+```powershell
+pgschema-export.exe --help
+
+### Linux / macOS
+
+chmod +x pgschema-export
+./pgschema-export --help
 
 ---
 
@@ -226,11 +262,14 @@ to PostgreSQL workflows.
 
 ## 🏗 Tech Stack
 
-* .NET 8 / 9
-* C#
-* Npgsql
-* Cross-platform CLI
+- .NET 8
+- C#
+- Npgsql
 
 ---
 
-Please, leave your feedback.
+## 🙌 Feedback
+
+This is an early release, so feedback is very welcome.
+
+If you use PostgreSQL and have ever struggled with reviewing schema dumps in Git, please open an issue with your use case or suggestions.
