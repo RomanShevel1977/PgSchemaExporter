@@ -1,27 +1,49 @@
 # 🐘 PostgreSQL Git-Native Schema Exporter
 
-> Turn your PostgreSQL database into clean, structured, Git-friendly code.
+> Make PostgreSQL behave like a real codebase.
 
-Stop fighting with massive `pg_dump` files.
-Start managing your database like a real software project.
+Git-native PostgreSQL schema exporter and `pg_dump` splitter.
 
 ---
 
-## 🚀 Overview
+## 🚀 Why this exists
 
-**PostgreSQL Git-Native Schema Exporter** is a CLI tool that transforms:
+If you've ever tried to use `pg_dump` with Git, you know the pain:
 
-* a live PostgreSQL database
-* or an existing `pg_dump` file
+### ❌ pg_dump
 
-into a structured, readable, version-controllable SQL project.
+* 50k+ lines SQL files
+* impossible to review changes
+* huge diffs for tiny updates
+* no structure
 
-Instead of a single unreadable SQL dump, you get:
+---
 
+## 🔥 This tool fixes that
+
+### ✅ PgSchemaExporter
+
+* one file per object
+* clean Git diffs
+* readable SQL
+* structured folders
+
+---
+
+## 📦 What you get
+
+Instead of this:
+
+```text
+schema.sql (50,000 lines)
 ```
+
+You get:
+
+```text
 db-schema/
-├── schemas/
 ├── tables/
+│   └── public.users.sql
 ├── indexes/
 ├── constraints/
 ├── views/
@@ -31,122 +53,28 @@ db-schema/
 └── deploy.sql
 ```
 
----
-
-## ❌ The Problem
-
-`pg_dump` is powerful — but painful:
-
-* One huge SQL file (10k–100k+ lines)
-* Impossible to review in Git
-* Hard to debug changes
-* No logical structure
-* Not CI/CD friendly
-
----
-
-## ✅ The Solution
-
-This tool converts your database into:
-
-* 📁 **Structured folders**
-* 📄 **One file per object**
-* 🔍 **Clean Git diffs**
-* ⚙️ **Deploy-ready scripts**
-
----
-
-## 🧠 Why not just pg_dump?
-
-`pg_dump` is great for backups.
-
-PgSchemaExporter is focused on development workflows:
-- readable schema structure
-- clean Git diffs
-- code review
-- CI/CD-friendly output
-
----
-
-## 🚧 Project Status
-
-This project is in early public release (`v0.5.0`).
-
-It is usable for schema export and pg_dump splitting, but APIs and output format may still change before `v1.0.0`.
-
----
-
-## ✨ Features
-
-### 🧱 Git-Native Schema Export
-
-* Splits schema into atomic files
-* Logical directory structure
-* Human-readable SQL
-* Perfect for Git versioning
-
----
-
-## Before vs After
-
-### ❌ pg_dump
-- 50,000 lines
-- impossible to review
-- no structure
-
-### ✅ PgSchemaExporter
-- one file per table
-- clean diffs
-- readable SQL
-
----
-
-
-### 🔄 Split Existing pg_dump
-
-Already have a dump?
-
-```bash
-pgschema-export split-dump --input schema.sql --output ./db-schema
-```
-
-No database connection required.
-
----
-
-### 🧠 Safe SQL Parsing
-
-Handles complex PostgreSQL syntax:
-
-* `$$ function bodies $$`
-* strings and escaped quotes
-* comments (`--`, `/* */`)
-* multi-line SQL blocks
-
----
-
-### ⚡ CLI First
-
-* Lightweight
-* Scriptable
-* CI/CD ready
-* Cross-platform (.NET)
+👉 Now database changes look like normal code changes
 
 ---
 
 ## 📥 Install
 
-Download the latest binary from the [Releases](../../releases) page.
+Download the latest binary:
+
+👉 https://github.com/RomanShevel1977/PgSchemaExporter/releases
+
+### Linux / macOS
+
+```bash
+chmod +x pgschema-export
+./pgschema-export --help
+```
 
 ### Windows
 
 ```powershell
 pgschema-export.exe --help
-
-### Linux / macOS
-
-chmod +x pgschema-export
-./pgschema-export --help
+```
 
 ---
 
@@ -157,119 +85,88 @@ chmod +x pgschema-export
 ```bash
 pgschema-export export \
   --connection "Host=localhost;Database=mydb;Username=postgres;Password=123" \
-  --output "./db-schema" \
-  --schemas public \
-  --clean
+  --output "./db-schema"
 ```
 
 ---
 
-### Split pg_dump
+### Split existing pg_dump
 
 ```bash
 pg_dump --schema-only --no-owner --no-privileges --file schema.sql mydb
 
 pgschema-export split-dump \
   --input "./schema.sql" \
-  --output "./db-schema" \
-  --clean
+  --output "./db-schema"
 ```
 
 ---
 
-## 📦 Output Structure
+## 🧠 Why not just pg_dump?
 
-```
-db-schema/
-├── tables/
-│   └── public.users.sql
-├── indexes/
-│   └── public.users.indexes.sql
-├── constraints/
-│   └── public.users.constraints.sql
-├── views/
-│   └── public.active_users.sql
-├── functions/
-│   └── public.normalize_email.sql
-├── types/
-├── sequences/
-└── deploy.sql
-```
+`pg_dump` is great for backups.
+
+PgSchemaExporter is for development workflows:
+
+* Git-friendly structure
+* readable schema
+* code review
+* CI/CD
 
 ---
 
-## 💡 Use Cases
+## 🎯 Designed for
 
-* Git-based schema versioning
-* Code review for database changes
-* CI/CD pipelines
-* Safe environment replication
-* Refactoring legacy databases
-* Dev ↔ Prod synchronization
+* Backend developers
+* DevOps engineers
+* Teams using Git for DB versioning
 
 ---
 
-## 🧪 Recommended pg_dump Options
+## ⚠️ Limitations (v0.5.0)
 
-```bash
-pg_dump \
-  --schema-only \
-  --no-owner \
-  --no-privileges \
-  --file schema.sql \
-  mydb
-```
-
----
-
-## ⚠️ Limitations (MVP)
-
-Currently optimized for schema-only dumps.
-
-Not fully supported yet:
-
-* `COPY` / data migration
-* `GRANT` / permissions
-* ownership metadata
-* complex extensions
+* schema-only focus
+* no data migration yet
+* limited support for permissions
 
 ---
 
 ## 🔮 Roadmap
 
-* Dependency-aware ordering
-* Data migration engine (COPY)
-* Smart anonymization (GDPR-safe)
+* dependency-aware ordering
+* high-speed data migration (COPY)
+* anonymization (GDPR-safe)
 * VS Code extension
-* CI/CD integrations
-* Schema diff engine
 
 ---
 
-## 🧠 Philosophy
+## 📊 Example use cases
 
-> Your database schema is code. Treat it like code.
-
-This tool brings:
-
-* clarity
-* structure
-* maintainability
-
-to PostgreSQL workflows.
-
----
-
-## 🏗 Tech Stack
-
-- .NET 8
-- C#
-- Npgsql
+* review DB changes in pull requests
+* version schema in Git
+* generate clean migrations
+* refactor legacy databases
 
 ---
 
 ## 🙌 Feedback
 
-This is an early release, so feedback is very welcome.
+If you've ever struggled with `pg_dump` in Git — this tool is for you.
 
-If you use PostgreSQL and have ever struggled with reviewing schema dumps in Git, please open an issue with your use case or suggestions.
+Open an issue or share your workflow.
+
+---
+
+## ⭐ Support
+
+If this project helps you:
+
+* ⭐ Star the repo
+* 🐛 Report issues
+* 💡 Suggest features
+
+---
+
+## 📜 License
+
+MIT
