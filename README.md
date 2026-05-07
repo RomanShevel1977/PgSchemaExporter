@@ -78,7 +78,7 @@ pgschema-export.exe --help
 
 ---
 
-## 🛠 Usage
+## Usage
 
 ### Export from PostgreSQL
 
