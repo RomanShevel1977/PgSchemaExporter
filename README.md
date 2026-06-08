@@ -1,4 +1,4 @@
-# 🐘 PostgreSQL Git-Native Schema Exporter
+# PostgreSQL Git-Native Schema Exporter
 
 > Make PostgreSQL behave like a real codebase.
 
@@ -6,7 +6,7 @@ Git-native PostgreSQL schema exporter and `pg_dump` splitter.
 
 ---
 
-## 🚀 Why this exists
+## Why this exists
 
 If you've ever tried to use `pg_dump` with Git, you know the pain:
 
@@ -19,7 +19,7 @@ If you've ever tried to use `pg_dump` with Git, you know the pain:
 
 ---
 
-## 🔥 This tool fixes that
+## This tool fixes that
 
 ### ✅ PgSchemaExporter
 
@@ -30,7 +30,7 @@ If you've ever tried to use `pg_dump` with Git, you know the pain:
 
 ---
 
-## 📦 What you get
+## What you get
 
 Instead of this:
 
@@ -53,15 +53,15 @@ db-schema/
 └── deploy.sql
 ```
 
-👉 Now database changes look like normal code changes
+Now database changes look like normal code changes
 
 ---
 
-## 📥 Install
+## Install
 
 Download the latest binary:
 
-👉 https://github.com/RomanShevel1977/PgSchemaExporter/releases
+https://github.com/RomanShevel1977/PgSchemaExporter/releases
 
 ### Linux / macOS
 
@@ -78,7 +78,7 @@ pgschema-export.exe --help
 
 ---
 
-## 🛠 Usage
+## Usage
 
 ### Export from PostgreSQL
 
@@ -102,7 +102,7 @@ pgschema-export split-dump \
 
 ---
 
-## 🧠 Why not just pg_dump?
+## Why not just pg_dump?
 
 `pg_dump` is great for backups.
 
@@ -115,7 +115,7 @@ PgSchemaExporter is for development workflows:
 
 ---
 
-## 🎯 Designed for
+## Designed for
 
 * Backend developers
 * DevOps engineers
@@ -123,7 +123,7 @@ PgSchemaExporter is for development workflows:
 
 ---
 
-## ⚠️ Limitations (v0.5.0)
+## Limitations (v0.5.0)
 
 * schema-only focus
 * no data migration yet
@@ -131,7 +131,7 @@ PgSchemaExporter is for development workflows:
 
 ---
 
-## 🔮 Roadmap
+## Roadmap
 
 * dependency-aware ordering
 * high-speed data migration (COPY)
@@ -140,7 +140,7 @@ PgSchemaExporter is for development workflows:
 
 ---
 
-## 📊 Example use cases
+## Example use cases
 
 * review DB changes in pull requests
 * version schema in Git
@@ -149,7 +149,7 @@ PgSchemaExporter is for development workflows:
 
 ---
 
-## 🙌 Feedback
+## Feedback
 
 If you've ever struggled with `pg_dump` in Git — this tool is for you.
 
@@ -157,7 +157,7 @@ Open an issue or share your workflow.
 
 ---
 
-## ⭐ Support
+## Support
 
 If this project helps you:
 
@@ -167,6 +167,6 @@ If this project helps you:
 
 ---
 
-## 📜 License
+## License
 
 MIT
