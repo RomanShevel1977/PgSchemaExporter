@@ -354,6 +354,20 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
             JOIN pg_namespace n ON n.oid = p.pronamespace
             WHERE n.nspname = ANY(@schemas)
               AND NOT n.nspname = ANY(@excludeSchemas)
+              -- pg_proc also contains aggregates and window functions.
+              -- pg_get_functiondef() raises 42809 for aggregates such as PostGIS st_clusterintersecting.
+              -- Export only normal functions and procedures.
+              AND p.prokind IN ('f', 'p')
+              -- Extension-owned routines should be recreated by CREATE EXTENSION,
+              -- not exported individually. This avoids exporting PostGIS/pgcrypto internals.
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM pg_depend d
+                  JOIN pg_extension e ON e.oid = d.refobjid
+                  WHERE d.objid = p.oid
+                    AND d.classid = 'pg_proc'::regclass
+                    AND d.deptype = 'e'
+              )
             ORDER BY n.nspname, p.proname, identity_args;";
 
         await using var command = new NpgsqlCommand(sql, connection);
