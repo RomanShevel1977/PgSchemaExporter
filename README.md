@@ -136,10 +136,11 @@ PgSchemaExporter is for development workflows:
 
 ## Roadmap
 
-* dependency-aware ordering
-* high-speed data migration (COPY)
-* anonymization (GDPR-safe)
-* VS Code extension
+* v0.6.0  Deployment Manifest
+* v0.7.0  Trigger Export
+* v0.8.0  Schema Diff
+* v0.9.0  Dependency Graph
+* v1.0.0  Full PostgreSQL Coverage
 
 ---
 
