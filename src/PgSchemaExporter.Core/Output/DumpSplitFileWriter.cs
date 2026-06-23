@@ -44,19 +44,19 @@ public sealed class DumpSplitFileWriter
                     result.FunctionFiles.AddRange(await WriteObjectsAsync(outputDirectory, "functions", group, cancellationToken));
                     break;
                 case SqlObjectType.Trigger:
-                    await WriteObjectsAsync(outputDirectory, "triggers", group, cancellationToken);
+                    result.TriggerFiles.AddRange(await WriteObjectsAsync(outputDirectory, "triggers", group, cancellationToken));
                     break;
                 case SqlObjectType.Policy:
-                    await WriteObjectsAsync(outputDirectory, "policies", group, cancellationToken);
+                    result.PolicyFiles.AddRange(await WriteObjectsAsync(outputDirectory, "policies", group, cancellationToken));
                     break;
                 case SqlObjectType.Comment:
-                    await WriteObjectsAsync(outputDirectory, "comments", group, cancellationToken);
+                    result.CommentFiles.AddRange(await WriteObjectsAsync(outputDirectory, "comments", group, cancellationToken));
                     break;
                 case SqlObjectType.Grant:
-                    await WriteObjectsAsync(outputDirectory, "grants", group, cancellationToken);
+                    result.GrantFiles.AddRange(await WriteObjectsAsync(outputDirectory, "grants", group, cancellationToken));
                     break;
                 default:
-                    await WriteObjectsAsync(outputDirectory, "misc", group, cancellationToken);
+                    result.OtherFiles.AddRange(await WriteObjectsAsync(outputDirectory, "misc", group, cancellationToken));
                     break;
             }
         }

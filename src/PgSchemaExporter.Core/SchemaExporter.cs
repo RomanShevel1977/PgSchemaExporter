@@ -9,6 +9,8 @@ public sealed class SchemaExporter
     private readonly IMetadataProvider _metadataProvider;
     private readonly SchemaFileWriter _schemaFileWriter;
     private readonly DeployScriptWriter _deployScriptWriter;
+    private readonly DependencyManifestWriter _dependencyManifestWriter;
+    private readonly DeploymentPlanBuilder _deploymentPlanBuilder;
     private readonly ReadmeWriter _readmeWriter;
 
     public SchemaExporter(
@@ -20,6 +22,8 @@ public sealed class SchemaExporter
         _metadataProvider = metadataProvider;
         _schemaFileWriter = schemaFileWriter;
         _deployScriptWriter = deployScriptWriter;
+        _dependencyManifestWriter = new DependencyManifestWriter();
+        _deploymentPlanBuilder = new DeploymentPlanBuilder();
         _readmeWriter = readmeWriter;
     }
 
@@ -36,7 +40,11 @@ public sealed class SchemaExporter
 
         var writeResult = await _schemaFileWriter.WriteAsync(options.OutputDirectory, model, cancellationToken);
 
-        await _deployScriptWriter.WriteAsync(options.OutputDirectory, writeResult.GetDeployOrder(), cancellationToken);
+        var deploymentPlan = _deploymentPlanBuilder.Build(model, writeResult);
+
+        await _deployScriptWriter.WriteAsync(options.OutputDirectory, deploymentPlan.OrderedFiles, cancellationToken);
+
+        await _dependencyManifestWriter.WriteAsync(options.OutputDirectory, deploymentPlan, cancellationToken);
 
         await _readmeWriter.WriteAsync(options.OutputDirectory, cancellationToken);
     }

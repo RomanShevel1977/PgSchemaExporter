@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using PgSchemaExporter.Core.Options;
 
 namespace PgSchemaExporter.Core.Configuration;
@@ -20,7 +21,8 @@ public static class ExportConfigLoader
             {
                 PropertyNameCaseInsensitive = true,
                 ReadCommentHandling = JsonCommentHandling.Skip,
-                AllowTrailingCommas = true
+                AllowTrailingCommas = true,
+                TypeInfoResolver = new DefaultJsonTypeInfoResolver()
             });
 
         return options ?? throw new InvalidOperationException("Config file is empty or invalid.");

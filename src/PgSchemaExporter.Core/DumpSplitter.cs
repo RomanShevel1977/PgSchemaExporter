@@ -11,6 +11,8 @@ public sealed class DumpSplitter
     private readonly PgDumpObjectClassifier _classifier;
     private readonly DumpSplitFileWriter _fileWriter;
     private readonly DeployScriptWriter _deployScriptWriter;
+    private readonly DependencyManifestWriter _dependencyManifestWriter;
+    private readonly DeploymentPlanBuilder _deploymentPlanBuilder;
     private readonly ReadmeWriter _readmeWriter;
 
     public DumpSplitter(
@@ -24,6 +26,8 @@ public sealed class DumpSplitter
         _classifier = classifier;
         _fileWriter = fileWriter;
         _deployScriptWriter = deployScriptWriter;
+        _dependencyManifestWriter = new DependencyManifestWriter();
+        _deploymentPlanBuilder = new DeploymentPlanBuilder();
         _readmeWriter = readmeWriter;
     }
 
@@ -46,8 +50,12 @@ public sealed class DumpSplitter
 
         var writeResult = await _fileWriter.WriteAsync(options.OutputDirectory, objects, cancellationToken);
 
+        var deploymentPlan = _deploymentPlanBuilder.Build(writeResult);
+
         if (options.GenerateDeployScript)
-            await _deployScriptWriter.WriteAsync(options.OutputDirectory, writeResult.GetDeployOrder(), cancellationToken);
+            await _deployScriptWriter.WriteAsync(options.OutputDirectory, deploymentPlan.OrderedFiles, cancellationToken);
+
+        await _dependencyManifestWriter.WriteAsync(options.OutputDirectory, deploymentPlan, cancellationToken);
 
         await _readmeWriter.WriteAsync(options.OutputDirectory, cancellationToken);
         await WriteSplitReportAsync(options.OutputDirectory, objects, cancellationToken);

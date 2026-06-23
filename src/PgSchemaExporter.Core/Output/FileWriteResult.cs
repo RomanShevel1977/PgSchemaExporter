@@ -12,6 +12,14 @@ public sealed class FileWriteResult
     public List<string> ViewFiles { get; } = [];
     public List<string> FunctionFiles { get; } = [];
 
+    // These are currently used mostly by split-dump mode.
+    // Live export support for these object kinds can be added incrementally.
+    public List<string> TriggerFiles { get; } = [];
+    public List<string> PolicyFiles { get; } = [];
+    public List<string> CommentFiles { get; } = [];
+    public List<string> GrantFiles { get; } = [];
+    public List<string> OtherFiles { get; } = [];
+
     public IReadOnlyList<string> GetDeployOrder()
     {
         return ExtensionFiles
@@ -21,9 +29,19 @@ public sealed class FileWriteResult
             .Concat(TableFiles)
             .Concat(ConstraintFiles)
             .Concat(IndexFiles)
-            .Concat(ViewFiles)
             .Concat(FunctionFiles)
-            .Distinct()
+            .Concat(ViewFiles)
+            .Concat(TriggerFiles)
+            .Concat(PolicyFiles)
+            .Concat(CommentFiles)
+            .Concat(GrantFiles)
+            .Concat(OtherFiles)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    public IReadOnlyList<string> GetAllFiles()
+    {
+        return GetDeployOrder();
     }
 }
