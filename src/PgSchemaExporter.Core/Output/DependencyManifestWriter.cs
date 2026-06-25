@@ -35,7 +35,7 @@ public sealed class DependencyManifestWriter
         writer.WritePropertyName("dependencies");
         writer.WriteStartObject();
 
-        foreach (var item in deploymentPlan.Dependencies.OrderBy(x => x.Key, StringComparer.Ordinal))
+        foreach (var item in deploymentPlan.Dependencies.Where(x => x.Value != null && x.Value.Count > 0).OrderBy(x => x.Key, StringComparer.Ordinal))
         {
             writer.WritePropertyName(item.Key);
             writer.WriteStartArray();

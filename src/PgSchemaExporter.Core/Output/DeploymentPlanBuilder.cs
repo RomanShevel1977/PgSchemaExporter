@@ -68,7 +68,13 @@ public sealed class DeploymentPlanBuilder
                 foreach (var table in model.Tables)
                 {
                     if (ReferencesTable(constraint.Definition, table.Schema, table.Name))
-                        AddDependency(dependencies, constraintFile, TryGet(tableFiles, table.Schema, table.Name));
+                    {
+                        // If constraint references another table (e.g., FOREIGN KEY), 
+                        // depend on that table's constraint file, not just the table
+                        var referencedConstraintFile = files.ConstraintFiles.FirstOrDefault(x =>
+                            x.StartsWith($"constraints/{Safe(table.Schema)}.{Safe(table.Name)}.", StringComparison.OrdinalIgnoreCase));
+                        AddDependency(dependencies, constraintFile, referencedConstraintFile ?? TryGet(tableFiles, table.Schema, table.Name));
+                    }
                 }
             }
         }
@@ -94,6 +100,26 @@ public sealed class DeploymentPlanBuilder
             {
                 if (ReferencesObject(function.Definition, table.Schema, table.Name))
                     AddDependency(dependencies, functionFile, TryGet(tableFiles, table.Schema, table.Name));
+            }
+
+            foreach (var otherFunction in model.Functions.Where(x =>
+                !(x.Schema.Equals(function.Schema, StringComparison.OrdinalIgnoreCase) &&
+                  x.Name.Equals(function.Name, StringComparison.OrdinalIgnoreCase))))
+            {
+                if (ReferencesRoutine(function.Definition, otherFunction.Schema, otherFunction.Name))
+                {
+                    var otherFunctionFile = functionFiles.FirstOrDefault(x =>
+                        x.StartsWith($"functions/{Safe(otherFunction.Schema)}.{Safe(otherFunction.Name)}.",
+                            StringComparison.OrdinalIgnoreCase));
+
+                    AddDependency(dependencies, functionFile, otherFunctionFile);
+                }
+            }
+
+            foreach (var view in model.Views)
+            {
+                if (ReferencesObject(function.Definition, view.Schema, view.Name))
+                    AddDependency(dependencies, functionFile, TryGet(viewFiles, view.Schema, view.Name));
             }
         }
 
@@ -287,6 +313,15 @@ public sealed class DeploymentPlanBuilder
         return Regex.IsMatch(
             sql,
             $@"\bREFERENCES\s+(?:{Regex.Escape(schema)}\.)?{Regex.Escape(table)}\b",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
+
+    private static bool ReferencesRoutine(string text, string schema, string name)
+    {
+        return Regex.IsMatch(
+            text,
+            $@"\b(?:{Regex.Escape(schema)}\.)?{Regex.Escape(name)}\s*\(",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
 
