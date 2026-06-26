@@ -150,6 +150,36 @@ public sealed class DeploymentPlanBuilder
             }
         }
 
+        foreach (var trigger in model.Triggers)
+        {
+            var triggerFile = files.TriggerFiles.FirstOrDefault(x => x.StartsWith($"triggers/{Safe(trigger.Schema)}.{Safe(trigger.TableName)}.{Safe(trigger.Name)}.", StringComparison.OrdinalIgnoreCase));
+            AddDependency(dependencies, triggerFile, TryGet(tableFiles, trigger.TableSchema, trigger.TableName));
+
+            foreach (var function in model.Functions)
+            {
+                if (ReferencesRoutine(trigger.Definition, function.Schema, function.Name))
+                {
+                    var functionFile = functionFiles.FirstOrDefault(x => x.StartsWith($"functions/{Safe(function.Schema)}.{Safe(function.Name)}.", StringComparison.OrdinalIgnoreCase));
+                    AddDependency(dependencies, triggerFile, functionFile);
+                }
+            }
+        }
+
+        foreach (var policy in model.Policies)
+        {
+            var policyFile = files.PolicyFiles.FirstOrDefault(x => x.StartsWith($"policies/{Safe(policy.Schema)}.{Safe(policy.TableName)}.{Safe(policy.Name)}.", StringComparison.OrdinalIgnoreCase));
+            AddDependency(dependencies, policyFile, TryGet(tableFiles, policy.TableSchema, policy.TableName));
+
+            foreach (var function in model.Functions)
+            {
+                if (ReferencesRoutine(policy.Definition, function.Schema, function.Name))
+                {
+                    var functionFile = functionFiles.FirstOrDefault(x => x.StartsWith($"functions/{Safe(function.Schema)}.{Safe(function.Name)}.", StringComparison.OrdinalIgnoreCase));
+                    AddDependency(dependencies, policyFile, functionFile);
+                }
+            }
+        }
+
         return BuildPlan(allFiles, dependencies);
     }
 

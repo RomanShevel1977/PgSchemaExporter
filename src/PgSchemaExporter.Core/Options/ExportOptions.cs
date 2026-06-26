@@ -21,6 +21,8 @@ public sealed class IncludeOptions
     public bool Constraints { get; set; } = true;
     public bool Indexes { get; set; } = true;
     public bool Views { get; set; } = true;
+    public bool Triggers { get; set; } = true;
+    public bool Policies { get; set; } = true;
     public bool Functions { get; set; } = true;
 }
 

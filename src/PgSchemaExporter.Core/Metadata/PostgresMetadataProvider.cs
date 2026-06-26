@@ -24,6 +24,8 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
             Constraints = options.Include.Constraints ? await GetConstraintsAsync(connection, options, cancellationToken) : [],
             Indexes = options.Include.Indexes ? await GetIndexesAsync(connection, options, cancellationToken) : [],
             Views = options.Include.Views ? await GetViewsAsync(connection, options, cancellationToken) : [],
+            Triggers = options.Include.Triggers ? await GetTriggersAsync(connection, options, cancellationToken) : [],
+            Policies = options.Include.Policies ? await GetPoliciesAsync(connection, options, cancellationToken) : [],
             Functions = options.Include.Functions ? await GetFunctionsAsync(connection, options, cancellationToken) : []
         };
     }
@@ -341,6 +343,121 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
         }
 
         return result;
+    }
+
+    private static async Task<IReadOnlyList<DbTrigger>> GetTriggersAsync(NpgsqlConnection connection, ExportOptions options, CancellationToken cancellationToken)
+    {
+        const string sql = @"
+            SELECT n.nspname AS schema_name,
+                   tbl.relname AS table_name,
+                   trg.tgname AS trigger_name,
+                   pg_get_triggerdef(trg.oid, true) AS definition
+            FROM pg_trigger trg
+            JOIN pg_class tbl ON tbl.oid = trg.tgrelid
+            JOIN pg_namespace n ON n.oid = tbl.relnamespace
+            WHERE NOT trg.tgisinternal
+              AND n.nspname = ANY(@schemas)
+              AND NOT n.nspname = ANY(@excludeSchemas)
+            ORDER BY n.nspname, tbl.relname, trg.tgname;";
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        AddSchemaParameters(command, options);
+
+        var result = new List<DbTrigger>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(new DbTrigger
+            {
+                Schema = reader.GetString(0),
+                TableSchema = reader.GetString(0),
+                TableName = reader.GetString(1),
+                Name = reader.GetString(2),
+                Definition = reader.GetString(3)
+            });
+        }
+
+        return result;
+    }
+
+    private static async Task<IReadOnlyList<DbPolicy>> GetPoliciesAsync(NpgsqlConnection connection, ExportOptions options, CancellationToken cancellationToken)
+    {
+        var usePolicyDef = await PolicyDefFunctionExistsAsync(connection, cancellationToken);
+
+        var sql = usePolicyDef
+            ? @"
+                SELECT n.nspname AS schema_name,
+                       tbl.relname AS table_name,
+                       pol.polname AS policy_name,
+                       pg_get_policydef(pol.oid) AS definition
+                FROM pg_policy pol
+                JOIN pg_class tbl ON tbl.oid = pol.polrelid
+                JOIN pg_namespace n ON n.oid = tbl.relnamespace
+                WHERE n.nspname = ANY(@schemas)
+                  AND NOT n.nspname = ANY(@excludeSchemas)
+                ORDER BY n.nspname, tbl.relname, pol.polname;"
+            : @"
+                SELECT n.nspname AS schema_name,
+                       tbl.relname AS table_name,
+                       pol.polname AS policy_name,
+                       format(
+                           'CREATE POLICY %I ON %I.%I %s FOR %s TO %s%s%s',
+                           pol.polname,
+                           n.nspname,
+                           tbl.relname,
+                           CASE WHEN pol.polpermissive THEN 'AS PERMISSIVE' ELSE 'AS RESTRICTIVE' END,
+                           CASE pol.polcmd
+                               WHEN 'r' THEN 'SELECT'
+                               WHEN 'a' THEN 'INSERT'
+                               WHEN 'w' THEN 'UPDATE'
+                               WHEN 'd' THEN 'DELETE'
+                               ELSE ''
+                           END,
+                           CASE WHEN coalesce(array_remove(pol.polroles, 0::oid), '{}'::oid[]) = '{}' THEN 'PUBLIC' ELSE array_to_string(ARRAY(SELECT quote_ident(pg_get_userbyid(r)) FROM unnest(array_remove(pol.polroles, 0::oid)) AS r WHERE r <> 0), ', ') END,
+                           CASE WHEN pol.polqual IS NULL THEN '' ELSE ' USING (' || pg_get_expr(pol.polqual, pol.polrelid) || ')' END,
+                           CASE WHEN pol.polwithcheck IS NULL THEN '' ELSE ' WITH CHECK (' || pg_get_expr(pol.polwithcheck, pol.polrelid) || ')' END
+                       ) AS definition
+                FROM pg_policy pol
+                JOIN pg_class tbl ON tbl.oid = pol.polrelid
+                JOIN pg_namespace n ON n.oid = tbl.relnamespace
+                WHERE n.nspname = ANY(@schemas)
+                  AND NOT n.nspname = ANY(@excludeSchemas)
+                ORDER BY n.nspname, tbl.relname, pol.polname;";
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        AddSchemaParameters(command, options);
+
+        var result = new List<DbPolicy>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(new DbPolicy
+            {
+                Schema = reader.GetString(0),
+                TableSchema = reader.GetString(0),
+                TableName = reader.GetString(1),
+                Name = reader.GetString(2),
+                Definition = reader.GetString(3)
+            });
+        }
+
+        return result;
+    }
+
+    private static async Task<bool> PolicyDefFunctionExistsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        const string sql = @"
+            SELECT EXISTS (
+                SELECT 1
+                FROM pg_proc p
+                JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE p.proname = 'pg_get_policydef'
+                  AND n.nspname = 'pg_catalog'
+            );";
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is bool exists && exists;
     }
 
     private static async Task<IReadOnlyList<DbFunction>> GetFunctionsAsync(NpgsqlConnection connection, ExportOptions options, CancellationToken cancellationToken)

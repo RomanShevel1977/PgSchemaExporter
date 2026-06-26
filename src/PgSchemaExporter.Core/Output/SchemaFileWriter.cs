@@ -55,6 +55,12 @@ public sealed class SchemaFileWriter
         foreach (var item in model.Views.OrderBy(x => x.Schema).ThenBy(x => x.Name))
             result.ViewFiles.Add(await WriteFileAsync(outputDirectory, "views", $"{Safe(item.Schema)}.{Safe(item.Name)}.sql", _viewGenerator.Generate(item), cancellationToken));
 
+        foreach (var trigger in model.Triggers.OrderBy(x => x.Schema).ThenBy(x => x.TableName).ThenBy(x => x.Name))
+            result.TriggerFiles.Add(await WriteFileAsync(outputDirectory, "triggers", $"{Safe(trigger.Schema)}.{Safe(trigger.TableName)}.{Safe(trigger.Name)}.sql", trigger.Definition, cancellationToken));
+
+        foreach (var policy in model.Policies.OrderBy(x => x.Schema).ThenBy(x => x.TableName).ThenBy(x => x.Name))
+            result.PolicyFiles.Add(await WriteFileAsync(outputDirectory, "policies", $"{Safe(policy.Schema)}.{Safe(policy.TableName)}.{Safe(policy.Name)}.sql", policy.Definition, cancellationToken));
+
         foreach (var item in model.Functions.OrderBy(x => x.Schema).ThenBy(x => x.Name).ThenBy(x => x.ArgumentsIdentity))
         {
             var argsHash = Math.Abs(item.ArgumentsIdentity.GetHashCode()).ToString("x");
