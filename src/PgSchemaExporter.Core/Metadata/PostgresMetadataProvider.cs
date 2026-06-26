@@ -1,4 +1,5 @@
 using Npgsql;
+using System.Linq;
 using PgSchemaExporter.Core.Models;
 using PgSchemaExporter.Core.Options;
 
@@ -26,6 +27,8 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
             Views = options.Include.Views ? await GetViewsAsync(connection, options, cancellationToken) : [],
             Triggers = options.Include.Triggers ? await GetTriggersAsync(connection, options, cancellationToken) : [],
             Policies = options.Include.Policies ? await GetPoliciesAsync(connection, options, cancellationToken) : [],
+            Comments = options.Include.Comments ? await GetCommentsAsync(connection, options, cancellationToken) : [],
+            Grants = options.Include.Grants ? await GetGrantsAsync(connection, options, cancellationToken) : [],
             Functions = options.Include.Functions ? await GetFunctionsAsync(connection, options, cancellationToken) : []
         };
     }
@@ -378,6 +381,248 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
         }
 
         return result;
+    }
+
+    private static async Task<IReadOnlyList<DbComment>> GetCommentsAsync(NpgsqlConnection connection, ExportOptions options, CancellationToken cancellationToken)
+    {
+        const string sql = @"
+            SELECT n.nspname AS schema_name,
+                   'SCHEMA' AS object_type,
+                   n.nspname AS object_name,
+                   NULL::text AS sub_object,
+                   format('COMMENT ON SCHEMA %I IS %L', n.nspname, obj_description(n.oid, 'pg_namespace')) AS definition
+            FROM pg_namespace n
+            WHERE obj_description(n.oid, 'pg_namespace') IS NOT NULL
+              AND n.nspname = ANY(@schemas)
+              AND NOT n.nspname = ANY(@excludeSchemas)
+
+            UNION ALL
+
+            SELECT n.nspname,
+                   CASE c.relkind
+                       WHEN 'r' THEN 'TABLE'
+                       WHEN 'v' THEN 'VIEW'
+                       WHEN 'm' THEN 'MATERIALIZED VIEW'
+                       WHEN 'S' THEN 'SEQUENCE'
+                       WHEN 'f' THEN 'FOREIGN TABLE'
+                       ELSE 'TABLE'
+                   END AS object_type,
+                   c.relname AS object_name,
+                   NULL::text AS sub_object,
+                   format(
+                       'COMMENT ON %s %I.%I IS %L',
+                       CASE c.relkind
+                           WHEN 'r' THEN 'TABLE'
+                           WHEN 'v' THEN 'VIEW'
+                           WHEN 'm' THEN 'MATERIALIZED VIEW'
+                           WHEN 'S' THEN 'SEQUENCE'
+                           WHEN 'f' THEN 'FOREIGN TABLE'
+                           ELSE 'TABLE'
+                       END,
+                       n.nspname,
+                       c.relname,
+                       obj_description(c.oid, 'pg_class')
+                   ) AS definition
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE obj_description(c.oid, 'pg_class') IS NOT NULL
+              AND n.nspname = ANY(@schemas)
+              AND NOT n.nspname = ANY(@excludeSchemas)
+
+            UNION ALL
+
+            SELECT n.nspname,
+                   'COLUMN' AS object_type,
+                   c.relname AS object_name,
+                   a.attname AS sub_object,
+                   format('COMMENT ON COLUMN %I.%I.%I IS %L', n.nspname, c.relname, a.attname, col_description(a.attrelid, a.attnum)) AS definition
+            FROM pg_attribute a
+            JOIN pg_class c ON c.oid = a.attrelid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE a.attnum > 0
+              AND NOT a.attisdropped
+              AND col_description(a.attrelid, a.attnum) IS NOT NULL
+              AND n.nspname = ANY(@schemas)
+              AND NOT n.nspname = ANY(@excludeSchemas)
+
+            UNION ALL
+
+            SELECT n.nspname,
+                   'TYPE' AS object_type,
+                   t.typname AS object_name,
+                   NULL::text AS sub_object,
+                   format('COMMENT ON TYPE %I.%I IS %L', n.nspname, t.typname, obj_description(t.oid, 'pg_type')) AS definition
+            FROM pg_type t
+            JOIN pg_namespace n ON n.oid = t.typnamespace
+            WHERE obj_description(t.oid, 'pg_type') IS NOT NULL
+              AND n.nspname = ANY(@schemas)
+              AND NOT n.nspname = ANY(@excludeSchemas)
+              AND t.typtype IN ('c', 'd', 'e', 'r', 'p')
+
+            UNION ALL
+
+            SELECT n.nspname,
+                   'FUNCTION' AS object_type,
+                   p.proname AS object_name,
+                   pg_get_function_identity_arguments(p.oid) AS sub_object,
+                   format('COMMENT ON FUNCTION %I.%I(%s) IS %L', n.nspname, p.proname, pg_get_function_identity_arguments(p.oid), obj_description(p.oid, 'pg_proc')) AS definition
+            FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE obj_description(p.oid, 'pg_proc') IS NOT NULL
+              AND n.nspname = ANY(@schemas)
+              AND NOT n.nspname = ANY(@excludeSchemas)
+              AND p.prokind IN ('f', 'p')
+
+            UNION ALL
+
+            SELECT n.nspname,
+                   'CONSTRAINT' AS object_type,
+                   tbl.relname AS object_name,
+                   con.conname AS sub_object,
+                   format('COMMENT ON CONSTRAINT %I ON %I.%I IS %L', con.conname, n.nspname, tbl.relname, obj_description(con.oid, 'pg_constraint')) AS definition
+            FROM pg_constraint con
+            JOIN pg_class tbl ON tbl.oid = con.conrelid
+            JOIN pg_namespace n ON n.oid = tbl.relnamespace
+            WHERE obj_description(con.oid, 'pg_constraint') IS NOT NULL
+                            AND n.nspname = ANY(@schemas)
+                            AND NOT n.nspname = ANY(@excludeSchemas);";
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        AddSchemaParameters(command, options);
+
+        var result = new List<DbComment>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(new DbComment
+            {
+                Schema = reader.GetString(0),
+                ObjectType = reader.GetString(1),
+                ObjectName = reader.GetString(2),
+                SubObject = reader.IsDBNull(3) ? null : reader.GetString(3),
+                Definition = reader.GetString(4)
+            });
+        }
+
+        var ordered = result
+            .OrderBy(x => x.Schema, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.ObjectType, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.ObjectName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.SubObject ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return ordered;
+    }
+
+    private static async Task<IReadOnlyList<DbGrant>> GetGrantsAsync(NpgsqlConnection connection, ExportOptions options, CancellationToken cancellationToken)
+    {
+        const string sql = @"
+            SELECT n.nspname AS schema_name,
+                   CASE c.relkind WHEN 'S' THEN 'SEQUENCE' ELSE 'TABLE' END AS object_type,
+                   c.relname AS object_name,
+                   NULL::text AS sub_object,
+                   format(
+                       'GRANT %s ON %s %I.%I TO %s%s',
+                       acl.privilege_type,
+                       CASE c.relkind WHEN 'S' THEN 'SEQUENCE' ELSE 'TABLE' END,
+                       n.nspname,
+                       c.relname,
+                       CASE WHEN acl.grantee = 0 THEN 'PUBLIC' ELSE quote_ident(pg_get_userbyid(acl.grantee)) END,
+                       CASE WHEN acl.is_grantable THEN ' WITH GRANT OPTION' ELSE '' END
+                   ) AS definition
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            CROSS JOIN LATERAL aclexplode(c.relacl) AS acl
+            WHERE c.relkind IN ('r', 'p', 'f', 'v', 'm', 'S')
+              AND n.nspname = ANY(@schemas)
+              AND NOT n.nspname = ANY(@excludeSchemas)
+
+            UNION ALL
+
+            SELECT n.nspname AS schema_name,
+                   'SCHEMA' AS object_type,
+                   n.nspname AS object_name,
+                   NULL::text AS sub_object,
+                   format(
+                       'GRANT %s ON SCHEMA %I TO %s%s',
+                       acl.privilege_type,
+                       n.nspname,
+                       CASE WHEN acl.grantee = 0 THEN 'PUBLIC' ELSE quote_ident(pg_get_userbyid(acl.grantee)) END,
+                       CASE WHEN acl.is_grantable THEN ' WITH GRANT OPTION' ELSE '' END
+                   ) AS definition
+            FROM pg_namespace n
+            CROSS JOIN LATERAL aclexplode(n.nspacl) AS acl
+            WHERE n.nspname = ANY(@schemas)
+              AND NOT n.nspname = ANY(@excludeSchemas)
+
+            UNION ALL
+
+            SELECT n.nspname AS schema_name,
+                   'TYPE' AS object_type,
+                   t.typname AS object_name,
+                   NULL::text AS sub_object,
+                   format(
+                       'GRANT %s ON TYPE %I.%I TO %s%s',
+                       acl.privilege_type,
+                       n.nspname,
+                       t.typname,
+                       CASE WHEN acl.grantee = 0 THEN 'PUBLIC' ELSE quote_ident(pg_get_userbyid(acl.grantee)) END,
+                       CASE WHEN acl.is_grantable THEN ' WITH GRANT OPTION' ELSE '' END
+                   ) AS definition
+            FROM pg_type t
+            JOIN pg_namespace n ON n.oid = t.typnamespace
+            CROSS JOIN LATERAL aclexplode(t.typacl) AS acl
+            WHERE n.nspname = ANY(@schemas)
+              AND NOT n.nspname = ANY(@excludeSchemas)
+              AND t.typtype IN ('c', 'd', 'e', 'r', 'p')
+
+            UNION ALL
+
+            SELECT n.nspname AS schema_name,
+                   'FUNCTION' AS object_type,
+                   p.proname AS object_name,
+                   pg_get_function_identity_arguments(p.oid) AS sub_object,
+                   format(
+                       'GRANT %s ON FUNCTION %I.%I(%s) TO %s%s',
+                       acl.privilege_type,
+                       n.nspname,
+                       p.proname,
+                       pg_get_function_identity_arguments(p.oid),
+                       CASE WHEN acl.grantee = 0 THEN 'PUBLIC' ELSE quote_ident(pg_get_userbyid(acl.grantee)) END,
+                       CASE WHEN acl.is_grantable THEN ' WITH GRANT OPTION' ELSE '' END
+                   ) AS definition
+            FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            CROSS JOIN LATERAL aclexplode(p.proacl) AS acl
+            WHERE n.nspname = ANY(@schemas)
+              AND NOT n.nspname = ANY(@excludeSchemas)
+                            AND p.prokind IN ('f', 'p');";
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        AddSchemaParameters(command, options);
+
+        var result = new List<DbGrant>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(new DbGrant
+            {
+                Schema = reader.GetString(0),
+                ObjectType = reader.GetString(1),
+                ObjectName = reader.GetString(2),
+                SubObject = reader.IsDBNull(3) ? null : reader.GetString(3),
+                Definition = reader.GetString(4)
+            });
+        }
+
+        var ordered = result
+            .OrderBy(x => x.Schema, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.ObjectType, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.ObjectName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.SubObject ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return ordered;
     }
 
     private static async Task<IReadOnlyList<DbPolicy>> GetPoliciesAsync(NpgsqlConnection connection, ExportOptions options, CancellationToken cancellationToken)

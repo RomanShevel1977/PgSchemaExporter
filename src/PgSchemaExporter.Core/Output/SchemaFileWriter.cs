@@ -61,6 +61,34 @@ public sealed class SchemaFileWriter
         foreach (var policy in model.Policies.OrderBy(x => x.Schema).ThenBy(x => x.TableName).ThenBy(x => x.Name))
             result.PolicyFiles.Add(await WriteFileAsync(outputDirectory, "policies", $"{Safe(policy.Schema)}.{Safe(policy.TableName)}.{Safe(policy.Name)}.sql", policy.Definition, cancellationToken));
 
+        foreach (var group in model.Comments
+            .GroupBy(x => new { x.Schema, x.ObjectType, x.ObjectName, x.SubObject })
+            .OrderBy(x => x.Key.Schema)
+            .ThenBy(x => x.Key.ObjectType)
+            .ThenBy(x => x.Key.ObjectName)
+            .ThenBy(x => x.Key.SubObject))
+        {
+            var fileName = group.Key.SubObject is null
+                ? $"{Safe(group.Key.Schema)}.{Safe(group.Key.ObjectType)}.{Safe(group.Key.ObjectName)}.sql"
+                : $"{Safe(group.Key.Schema)}.{Safe(group.Key.ObjectType)}.{Safe(group.Key.ObjectName)}.{Safe(group.Key.SubObject)}.sql";
+            var sql = string.Join(Environment.NewLine, group.Select(x => x.Definition));
+            result.CommentFiles.Add(await WriteFileAsync(outputDirectory, "comments", fileName, sql, cancellationToken));
+        }
+
+        foreach (var group in model.Grants
+            .GroupBy(x => new { x.Schema, x.ObjectType, x.ObjectName, x.SubObject })
+            .OrderBy(x => x.Key.Schema)
+            .ThenBy(x => x.Key.ObjectType)
+            .ThenBy(x => x.Key.ObjectName)
+            .ThenBy(x => x.Key.SubObject))
+        {
+            var fileName = group.Key.SubObject is null
+                ? $"{Safe(group.Key.Schema)}.{Safe(group.Key.ObjectType)}.{Safe(group.Key.ObjectName)}.sql"
+                : $"{Safe(group.Key.Schema)}.{Safe(group.Key.ObjectType)}.{Safe(group.Key.ObjectName)}.{Safe(group.Key.SubObject)}.sql";
+            var sql = string.Join(Environment.NewLine, group.Select(x => x.Definition));
+            result.GrantFiles.Add(await WriteFileAsync(outputDirectory, "grants", fileName, sql, cancellationToken));
+        }
+
         foreach (var item in model.Functions.OrderBy(x => x.Schema).ThenBy(x => x.Name).ThenBy(x => x.ArgumentsIdentity))
         {
             var argsHash = Math.Abs(item.ArgumentsIdentity.GetHashCode()).ToString("x");
