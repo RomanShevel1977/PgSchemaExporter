@@ -126,11 +126,11 @@ PgSchemaExporter is for development workflows:
 
 ---
 
-## Limitations (v0.5.0)
+## Limitations (v0.9.0)
 
 * schema-only focus
 * no data migration yet
-* limited support for permissions
+* limited support for permissions in complex cases
 
 ---
 
@@ -138,8 +138,8 @@ PgSchemaExporter is for development workflows:
 
 * v0.6.0  Deployment Manifest ✅
 * v0.7.0  Triggers and Policies Export ✅
-* v0.8.0  Schema Diff
-* v0.9.0  Dependency Graph
+* v0.8.0  Schema Diff ✅
+* v0.9.0  Dependency Graph ✅
 * v1.0.0  Full PostgreSQL Coverage
 
 ---
@@ -152,6 +152,10 @@ PgSchemaExporter is for development workflows:
 * refactor legacy databases
 
 ---
+
+## Release Notes
+
+See [RELEASE_NOTES_0.9.0.md](RELEASE_NOTES_0.9.0.md) for the latest changes.
 
 ## Feedback
 

@@ -3,5 +3,11 @@ obj/
 .vs/
 *.user
 *.suo
+*.ps1
+*.gz
+*.zip
+*.bat
+*.tar
+*.exe
 db-schema/
 publish/

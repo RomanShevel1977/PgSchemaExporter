@@ -51,13 +51,6 @@ public sealed class SchemaExporter
 
     private static void Validate(ExportOptions options)
     {
-        if (string.IsNullOrWhiteSpace(options.ConnectionString))
-            throw new ArgumentException("Connection string is required.");
-
-        if (string.IsNullOrWhiteSpace(options.OutputDirectory))
-            throw new ArgumentException("Output directory is required.");
-
-        if (options.Schemas.Length == 0)
-            throw new ArgumentException("At least one schema is required.");
+        options.EnsureValidForExport();
     }
 }

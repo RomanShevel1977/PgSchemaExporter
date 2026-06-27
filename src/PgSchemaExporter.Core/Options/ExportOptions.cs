@@ -9,6 +9,24 @@ public sealed class ExportOptions
     public bool CleanOutputDirectory { get; set; }
     public IncludeOptions Include { get; set; } = new();
     public FormatOptions Format { get; set; } = new();
+
+    public void EnsureValidForExport()
+    {
+        if (string.IsNullOrWhiteSpace(ConnectionString))
+            throw new ArgumentException("Connection string is required.");
+
+        if (string.IsNullOrWhiteSpace(OutputDirectory))
+            throw new ArgumentException("Output directory is required.");
+
+        if (Schemas is null || Schemas.Length == 0 || Schemas.Any(string.IsNullOrWhiteSpace))
+            throw new ArgumentException("At least one schema is required.");
+
+        Schemas = Schemas
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
 }
 
 public sealed class IncludeOptions

@@ -11,6 +11,12 @@ if (args.Length == 0 || args.Contains("--help") || args.Contains("-h"))
     return;
 }
 
+if (args.Contains("--version") || args.Contains("-v"))
+{
+    Console.WriteLine("pgschema-export 0.9.0");
+    return;
+}
+
 try
 {
     var command = args[0];
@@ -179,7 +185,7 @@ static string[] Split(string value)
 static void PrintHelp()
 {
     Console.WriteLine("""
-PostgreSQL Git-Native Schema Exporter
+PostgreSQL Git-Native Schema Exporter 0.9.0
 
 Usage:
   pgschema-export export --connection "<connection-string>" --output "./db-schema"
@@ -205,5 +211,8 @@ Split-dump options:
 
 Recommended pg_dump:
   pg_dump --schema-only --no-owner --no-privileges --file schema.sql mydb
+
+Version:
+  --version, -v    Show the installed version
 """);
 }

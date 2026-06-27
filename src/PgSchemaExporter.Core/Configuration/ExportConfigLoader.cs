@@ -25,6 +25,10 @@ public static class ExportConfigLoader
                 TypeInfoResolver = new DefaultJsonTypeInfoResolver()
             });
 
-        return options ?? throw new InvalidOperationException("Config file is empty or invalid.");
+        if (options is null)
+            throw new InvalidOperationException("Config file is empty or invalid.");
+
+        options.EnsureValidForExport();
+        return options;
     }
 }
