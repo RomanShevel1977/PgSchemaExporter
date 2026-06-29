@@ -1,4 +1,7 @@
+using System.Security.Cryptography;
+using System.Text;
 using PgSchemaExporter.Core.Models;
+using PgSchemaExporter.Core.Options;
 using PgSchemaExporter.Core.Scripting;
 
 namespace PgSchemaExporter.Core.Output;
@@ -9,15 +12,24 @@ public sealed class SchemaFileWriter
     private readonly SchemaScriptGenerator _schemaGenerator = new();
     private readonly TypeScriptGenerator _typeGenerator = new();
     private readonly SequenceScriptGenerator _sequenceGenerator = new();
+    private readonly DomainScriptGenerator _domainGenerator = new();
+    private readonly ForeignTableScriptGenerator _foreignTableGenerator = new();
     private readonly TableScriptGenerator _tableGenerator = new();
     private readonly ConstraintScriptGenerator _constraintGenerator = new();
     private readonly IndexScriptGenerator _indexGenerator = new();
     private readonly ViewScriptGenerator _viewGenerator = new();
     private readonly FunctionScriptGenerator _functionGenerator = new();
 
+    public Task<FileWriteResult> WriteAsync(
+        string outputDirectory,
+        DatabaseModel model,
+        CancellationToken cancellationToken = default)
+        => WriteAsync(outputDirectory, model, new FormatOptions(), cancellationToken);
+
     public async Task<FileWriteResult> WriteAsync(
         string outputDirectory,
         DatabaseModel model,
+        FormatOptions format,
         CancellationToken cancellationToken = default)
     {
         var result = new FileWriteResult();
@@ -25,30 +37,70 @@ public sealed class SchemaFileWriter
         if (model.Extensions.Any())
         {
             var sql = string.Join(Environment.NewLine, model.Extensions.OrderBy(x => x.Name).Select(_extensionGenerator.Generate));
-            result.ExtensionFiles.Add(await WriteFileAsync(outputDirectory, "extensions", "001_extensions.sql", sql, cancellationToken));
+            result.ExtensionFiles.Add(await WriteFileAsync(outputDirectory, "extensions", "001_extensions.sql", ApplyFormat(sql, format), cancellationToken));
         }
 
         foreach (var item in model.Schemas.OrderBy(x => x.Name))
-            result.SchemaFiles.Add(await WriteFileAsync(outputDirectory, "schemas", $"{Safe(item.Name)}.sql", _schemaGenerator.Generate(item), cancellationToken));
+            result.SchemaFiles.Add(await WriteFileAsync(outputDirectory, "schemas", $"{Safe(item.Name)}.sql", ApplyFormat(_schemaGenerator.Generate(item), format), cancellationToken));
 
         foreach (var item in model.Types.OrderBy(x => x.Schema).ThenBy(x => x.Name))
-            result.TypeFiles.Add(await WriteFileAsync(outputDirectory, "types", $"{Safe(item.Schema)}.{Safe(item.Name)}.sql", _typeGenerator.Generate(item), cancellationToken));
+            result.TypeFiles.Add(await WriteFileAsync(outputDirectory, "types", $"{Safe(item.Schema)}.{Safe(item.Name)}.sql", ApplyFormat(_typeGenerator.Generate(item), format), cancellationToken));
 
         foreach (var item in model.Sequences.OrderBy(x => x.Schema).ThenBy(x => x.Name))
-            result.SequenceFiles.Add(await WriteFileAsync(outputDirectory, "sequences", $"{Safe(item.Schema)}.{Safe(item.Name)}.sql", _sequenceGenerator.Generate(item), cancellationToken));
+            result.SequenceFiles.Add(await WriteFileAsync(outputDirectory, "sequences", $"{Safe(item.Schema)}.{Safe(item.Name)}.sql", ApplyFormat(_sequenceGenerator.Generate(item), format), cancellationToken));
+
+        foreach (var item in model.Domains.OrderBy(x => x.Schema).ThenBy(x => x.Name))
+            result.DomainFiles.Add(await WriteFileAsync(outputDirectory, "domains", $"{Safe(item.Schema)}.{Safe(item.Name)}.sql", ApplyFormat(_domainGenerator.Generate(item), format), cancellationToken));
+
+        foreach (var item in model.ForeignTables.OrderBy(x => x.Schema).ThenBy(x => x.Name))
+            result.ForeignTableFiles.Add(await WriteFileAsync(outputDirectory, "foreign_tables", $"{Safe(item.Schema)}.{Safe(item.Name)}.sql", ApplyFormat(_foreignTableGenerator.Generate(item), format), cancellationToken));
+
+        var tableKeys = new HashSet<string>(model.Tables.Select(t => TableKey(t.Schema, t.Name)));
+
+        var constraintsByTable = model.Constraints
+            .GroupBy(x => TableKey(x.Schema, x.TableName))
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var indexesByTable = model.Indexes
+            .GroupBy(x => TableKey(x.Schema, x.TableName))
+            .ToDictionary(g => g.Key, g => g.ToList());
 
         foreach (var item in model.Tables.OrderBy(x => x.Schema).ThenBy(x => x.Name))
-            result.TableFiles.Add(await WriteFileAsync(outputDirectory, "tables", $"{Safe(item.Schema)}.{Safe(item.Name)}.sql", _tableGenerator.Generate(item), cancellationToken));
+        {
+            var sql = ApplyFormat(_tableGenerator.Generate(item), format);
+            var key = TableKey(item.Schema, item.Name);
+
+            if (!format.SplitConstraints && constraintsByTable.TryGetValue(key, out var inlineConstraints))
+            {
+                sql += Environment.NewLine + ApplyFormat(
+                    string.Join(Environment.NewLine, inlineConstraints.Select(_constraintGenerator.Generate)), format);
+            }
+
+            if (!format.SplitIndexes && indexesByTable.TryGetValue(key, out var inlineIndexes))
+            {
+                sql += Environment.NewLine + ApplyFormat(
+                    string.Join(Environment.NewLine, inlineIndexes.Select(_indexGenerator.Generate)), format);
+            }
+
+            result.TableFiles.Add(await WriteFileAsync(outputDirectory, "tables", $"{Safe(item.Schema)}.{Safe(item.Name)}.sql", sql, cancellationToken));
+        }
 
         foreach (var group in model.Constraints.GroupBy(x => new { x.Schema, x.TableName }).OrderBy(x => x.Key.Schema).ThenBy(x => x.Key.TableName))
         {
-            var sql = string.Join(Environment.NewLine, group.Select(_constraintGenerator.Generate));
+            // When inlining is enabled the constraints are written into the table file instead.
+            if (!format.SplitConstraints && tableKeys.Contains(TableKey(group.Key.Schema, group.Key.TableName)))
+                continue;
+
+            var sql = ApplyFormat(string.Join(Environment.NewLine, group.Select(_constraintGenerator.Generate)), format);
             result.ConstraintFiles.Add(await WriteFileAsync(outputDirectory, "constraints", $"{Safe(group.Key.Schema)}.{Safe(group.Key.TableName)}.constraints.sql", sql, cancellationToken));
         }
 
         foreach (var group in model.Indexes.GroupBy(x => new { x.Schema, x.TableName }).OrderBy(x => x.Key.Schema).ThenBy(x => x.Key.TableName))
         {
-            var sql = string.Join(Environment.NewLine, group.Select(_indexGenerator.Generate));
+            if (!format.SplitIndexes && tableKeys.Contains(TableKey(group.Key.Schema, group.Key.TableName)))
+                continue;
+
+            var sql = ApplyFormat(string.Join(Environment.NewLine, group.Select(_indexGenerator.Generate)), format);
             result.IndexFiles.Add(await WriteFileAsync(outputDirectory, "indexes", $"{Safe(group.Key.Schema)}.{Safe(group.Key.TableName)}.indexes.sql", sql, cancellationToken));
         }
 
@@ -91,7 +143,7 @@ public sealed class SchemaFileWriter
 
         foreach (var item in model.Functions.OrderBy(x => x.Schema).ThenBy(x => x.Name).ThenBy(x => x.ArgumentsIdentity))
         {
-            var argsHash = Math.Abs(item.ArgumentsIdentity.GetHashCode()).ToString("x");
+            var argsHash = StableHash(item.ArgumentsIdentity);
             result.FunctionFiles.Add(await WriteFileAsync(outputDirectory, "functions", $"{Safe(item.Schema)}.{Safe(item.Name)}.{argsHash}.sql", _functionGenerator.Generate(item), cancellationToken));
         }
 
@@ -116,4 +168,25 @@ public sealed class SchemaFileWriter
     }
 
     private static string Safe(string value) => SqlIdentifier.SafeFileName(value);
+
+    private static string TableKey(string schema, string table) => $"{schema}\u0000{table}";
+
+    // Deterministic hash so the same function always maps to the same file name across runs,
+    // keeping git diffs clean (string.GetHashCode is randomized per process).
+    private static string StableHash(string value)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        var sb = new StringBuilder(16);
+        for (var i = 0; i < 8; i++)
+            sb.Append(bytes[i].ToString("x2"));
+        return sb.ToString();
+    }
+
+    private static string ApplyFormat(string sql, FormatOptions format)
+    {
+        if (!format.UseIfNotExists)
+            sql = sql.Replace(" IF NOT EXISTS ", " ", StringComparison.OrdinalIgnoreCase);
+
+        return sql;
+    }
 }

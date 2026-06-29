@@ -12,3 +12,9 @@
 
 ## Packaging
 - Release scripts now target version 0.9.0 artifacts for Windows, Linux, and macOS.
+
+## 1.0.0 follow-up improvements
+- Added support for materialized views.
+- Added support for domains and foreign tables.
+- Improved SQL generation for table-level PostgreSQL features such as `UNLOGGED`, `TEMPORARY`, and `PARTITION OF`.
+- Added CLI options for enabling or disabling domains and foreign tables explicitly.

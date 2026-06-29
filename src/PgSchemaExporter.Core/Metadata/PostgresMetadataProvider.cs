@@ -21,6 +21,8 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
             Extensions = options.Include.Extensions ? await GetExtensionsAsync(connection, cancellationToken) : [],
             Types = options.Include.Types ? await GetTypesAsync(connection, options, cancellationToken) : [],
             Sequences = options.Include.Sequences ? await GetSequencesAsync(connection, options, cancellationToken) : [],
+            Domains = options.Include.Domains ? await GetDomainsAsync(connection, options, cancellationToken) : [],
+            ForeignTables = options.Include.ForeignTables ? await GetForeignTablesAsync(connection, options, cancellationToken) : [],
             Tables = options.Include.Tables ? await GetTablesAsync(connection, options, cancellationToken) : [],
             Constraints = options.Include.Constraints ? await GetConstraintsAsync(connection, options, cancellationToken) : [],
             Indexes = options.Include.Indexes ? await GetIndexesAsync(connection, options, cancellationToken) : [],
@@ -162,6 +164,76 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
                 MaximumValue = reader.GetInt64(5),
                 Increment = reader.GetInt64(6),
                 Cycle = reader.GetBoolean(7)
+            });
+        }
+
+        return result;
+    }
+
+    private static async Task<IReadOnlyList<DbDomain>> GetDomainsAsync(NpgsqlConnection connection, ExportOptions options, CancellationToken cancellationToken)
+    {
+        const string sql = @"
+            SELECT n.nspname AS schema_name,
+                   t.typname AS domain_name,
+                   pg_get_userbyid(n.nspowner) AS owner_name,
+                   format_type(t.typbasetype, t.typtypmod) AS base_type,
+                   t.typdefault AS default_value
+            FROM pg_type t
+            JOIN pg_namespace n ON n.oid = t.typnamespace
+            WHERE t.typtype = 'd'
+              AND n.nspname = ANY(@schemas)
+              AND NOT n.nspname = ANY(@excludeSchemas)
+            ORDER BY n.nspname, t.typname;";
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        AddSchemaParameters(command, options);
+
+        var result = new List<DbDomain>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var definition = $"{reader.GetString(3)}";
+            if (!reader.IsDBNull(4) && !string.IsNullOrWhiteSpace(reader.GetString(4)))
+                definition += $" DEFAULT {reader.GetString(4)}";
+
+            result.Add(new DbDomain
+            {
+                Schema = reader.GetString(0),
+                Name = reader.GetString(1),
+                Definition = definition
+            });
+        }
+
+        return result;
+    }
+
+    private static async Task<IReadOnlyList<DbForeignTable>> GetForeignTablesAsync(NpgsqlConnection connection, ExportOptions options, CancellationToken cancellationToken)
+    {
+        const string sql = @"
+            SELECT n.nspname AS schema_name,
+                   c.relname AS foreign_table_name,
+                   pg_get_viewdef(c.oid, true) AS definition
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relkind = 'f'
+              AND n.nspname = ANY(@schemas)
+              AND NOT n.nspname = ANY(@excludeSchemas)
+            ORDER BY n.nspname, c.relname;";
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        AddSchemaParameters(command, options);
+
+        var result = new List<DbForeignTable>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(new DbForeignTable
+            {
+                Schema = reader.GetString(0),
+                Name = reader.GetString(1),
+                Definition = reader.GetString(2)
             });
         }
 
@@ -321,13 +393,16 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
     private static async Task<IReadOnlyList<DbView>> GetViewsAsync(NpgsqlConnection connection, ExportOptions options, CancellationToken cancellationToken)
     {
         const string sql = @"
-            SELECT schemaname,
-                   viewname,
-                   definition
-            FROM pg_views
-            WHERE schemaname = ANY(@schemas)
-              AND NOT schemaname = ANY(@excludeSchemas)
-            ORDER BY schemaname, viewname;";
+            SELECT n.nspname AS schema_name,
+                   c.relname AS view_name,
+                   pg_get_viewdef(c.oid, true) AS definition,
+                   c.relkind = 'm' AS is_materialized
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relkind IN ('v', 'm')
+              AND n.nspname = ANY(@schemas)
+              AND NOT n.nspname = ANY(@excludeSchemas)
+            ORDER BY n.nspname, c.relname;";
 
         await using var command = new NpgsqlCommand(sql, connection);
         AddSchemaParameters(command, options);
@@ -341,7 +416,8 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
             {
                 Schema = reader.GetString(0),
                 Name = reader.GetString(1),
-                Definition = reader.GetString(2)
+                Definition = reader.GetString(2),
+                IsMaterialized = reader.GetBoolean(3)
             });
         }
 

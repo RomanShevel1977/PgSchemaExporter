@@ -15,6 +15,8 @@ public sealed class DeploymentPlanBuilder
         var extensionFiles = files.ExtensionFiles.ToList();
         var typeFiles = files.TypeFiles.ToDictionary(GetSchemaQualifiedNameFromFile, x => x, StringComparer.OrdinalIgnoreCase);
         var sequenceFiles = files.SequenceFiles.ToDictionary(GetSchemaQualifiedNameFromFile, x => x, StringComparer.OrdinalIgnoreCase);
+        var domainFiles = files.DomainFiles.ToDictionary(GetSchemaQualifiedNameFromFile, x => x, StringComparer.OrdinalIgnoreCase);
+        var foreignTableFiles = files.ForeignTableFiles.ToDictionary(GetSchemaQualifiedNameFromFile, x => x, StringComparer.OrdinalIgnoreCase);
         var tableFiles = files.TableFiles.ToDictionary(GetSchemaQualifiedNameFromFile, x => x, StringComparer.OrdinalIgnoreCase);
         var viewFiles = files.ViewFiles.ToDictionary(GetSchemaQualifiedNameFromFile, x => x, StringComparer.OrdinalIgnoreCase);
         var functionFiles = files.FunctionFiles.ToList();
@@ -32,6 +34,12 @@ public sealed class DeploymentPlanBuilder
 
         foreach (var sequence in model.Sequences)
             AddDependency(dependencies, TryGet(sequenceFiles, sequence.Schema, sequence.Name), TryGetSchemaFile(schemaFiles, sequence.Schema));
+
+        foreach (var domain in model.Domains)
+            AddDependency(dependencies, TryGet(domainFiles, domain.Schema, domain.Name), TryGetSchemaFile(schemaFiles, domain.Schema));
+
+        foreach (var foreignTable in model.ForeignTables)
+            AddDependency(dependencies, TryGet(foreignTableFiles, foreignTable.Schema, foreignTable.Name), TryGetSchemaFile(schemaFiles, foreignTable.Schema));
 
         foreach (var table in model.Tables)
         {
@@ -191,13 +199,15 @@ public sealed class DeploymentPlanBuilder
         AddFolderDependencies(files.ExtensionFiles, files.SchemaFiles, dependencies);
         AddFolderDependencies(files.TypeFiles, files.SchemaFiles.Concat(files.ExtensionFiles), dependencies);
         AddFolderDependencies(files.SequenceFiles, files.SchemaFiles, dependencies);
+        AddFolderDependencies(files.DomainFiles, files.SchemaFiles.Concat(files.TypeFiles).Concat(files.SequenceFiles), dependencies);
+        AddFolderDependencies(files.ForeignTableFiles, files.SchemaFiles.Concat(files.TypeFiles).Concat(files.TableFiles), dependencies);
         AddFolderDependencies(files.TableFiles, files.SchemaFiles.Concat(files.TypeFiles).Concat(files.SequenceFiles), dependencies);
         AddFolderDependencies(files.ConstraintFiles, files.TableFiles, dependencies);
         AddFolderDependencies(files.IndexFiles, files.TableFiles, dependencies);
         AddFolderDependencies(files.FunctionFiles, files.SchemaFiles.Concat(files.TypeFiles).Concat(files.TableFiles), dependencies);
         AddFolderDependencies(files.ViewFiles, files.TableFiles.Concat(files.FunctionFiles), dependencies);
         AddFolderDependencies(files.TriggerFiles, files.TableFiles.Concat(files.FunctionFiles), dependencies);
-        AddFolderDependencies(files.PolicyFiles, files.TableFiles, dependencies);
+        AddFolderDependencies(files.PolicyFiles, files.TableFiles.Concat(files.FunctionFiles), dependencies);
 
         var objectFiles = files.ExtensionFiles
             .Concat(files.SchemaFiles)

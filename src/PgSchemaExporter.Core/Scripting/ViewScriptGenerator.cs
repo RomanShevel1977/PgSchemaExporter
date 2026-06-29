@@ -8,7 +8,8 @@ public sealed class ViewScriptGenerator : ISqlScriptGenerator<DbView>
     public string Generate(DbView model)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"CREATE OR REPLACE VIEW {SqlIdentifier.Qualified(model.Schema, model.Name)} AS");
+        var keyword = model.IsMaterialized ? "CREATE MATERIALIZED VIEW" : "CREATE OR REPLACE VIEW";
+        sb.AppendLine($"{keyword} {SqlIdentifier.Qualified(model.Schema, model.Name)} AS");
         sb.AppendLine(model.Definition.Trim().TrimEnd(';') + ";");
         return sb.ToString();
     }

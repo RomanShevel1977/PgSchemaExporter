@@ -6,6 +6,8 @@ public sealed class FileWriteResult
     public List<string> SchemaFiles { get; } = [];
     public List<string> TypeFiles { get; } = [];
     public List<string> SequenceFiles { get; } = [];
+    public List<string> DomainFiles { get; } = [];
+    public List<string> ForeignTableFiles { get; } = [];
     public List<string> TableFiles { get; } = [];
     public List<string> ConstraintFiles { get; } = [];
     public List<string> IndexFiles { get; } = [];
@@ -26,6 +28,8 @@ public sealed class FileWriteResult
             .Concat(SchemaFiles)
             .Concat(TypeFiles)
             .Concat(SequenceFiles)
+            .Concat(DomainFiles)
+            .Concat(ForeignTableFiles)
             .Concat(TableFiles)
             .Concat(ConstraintFiles)
             .Concat(IndexFiles)

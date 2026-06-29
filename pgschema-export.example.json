@@ -4,21 +4,27 @@
   "schemas": ["public"],
   "excludeSchemas": ["pg_catalog", "information_schema"],
   "cleanOutputDirectory": true,
+  "dryRun": false,
   "include": {
     "schemas": true,
     "extensions": true,
     "types": true,
     "sequences": true,
+    "domains": true,
+    "foreignTables": true,
     "tables": true,
     "constraints": true,
     "indexes": true,
     "views": true,
+    "triggers": true,
+    "policies": true,
+    "comments": true,
+    "grants": true,
     "functions": true
   },
   "format": {
     "useIfNotExists": true,
     "splitConstraints": true,
-    "splitIndexes": true,
-    "uppercaseKeywords": true
+    "splitIndexes": true
   }
 }

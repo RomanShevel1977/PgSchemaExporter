@@ -53,6 +53,10 @@ db-schema/
 ├── functions/
 ├── types/
 ├── sequences/
+├── domains/
+├── foreign_tables/
+├── triggers/
+├── policies/
 └── deploy.sql
 ```
 
@@ -91,6 +95,16 @@ pgschema-export export \
   --output "./db-schema"
 ```
 
+Useful flags:
+
+```bash
+pgschema-export export \
+  --connection "Host=localhost;Database=mydb;Username=postgres;Password=123" \
+  --output "./db-schema" \
+  --include-domains \
+  --include-foreign-tables
+```
+
 ---
 
 ### Split existing pg_dump
@@ -126,11 +140,12 @@ PgSchemaExporter is for development workflows:
 
 ---
 
-## Limitations (v0.9.0)
+## Current status (v1.0.0 direction)
 
 * schema-only focus
 * no data migration yet
-* limited support for permissions in complex cases
+* broader PostgreSQL coverage, including domains, foreign tables, and materialized views
+* improved deployment ordering for real-world object dependencies
 
 ---
 
@@ -140,7 +155,7 @@ PgSchemaExporter is for development workflows:
 * v0.7.0  Triggers and Policies Export ✅
 * v0.8.0  Schema Diff ✅
 * v0.9.0  Dependency Graph ✅
-* v1.0.0  Full PostgreSQL Coverage
+* v1.0.0  Stability, diagnostics, and broader PostgreSQL coverage ✅
 
 ---
 
@@ -155,7 +170,7 @@ PgSchemaExporter is for development workflows:
 
 ## Release Notes
 
-See [RELEASE_NOTES_0.9.0.md](RELEASE_NOTES_0.9.0.md) for the latest changes.
+See [RELEASE_NOTES_1.0.0.md](RELEASE_NOTES_1.0.0.md) for the latest changes.
 
 ## Feedback
 
