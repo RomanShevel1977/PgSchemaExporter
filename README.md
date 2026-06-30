@@ -156,6 +156,10 @@ PgSchemaExporter is for development workflows:
 * v0.8.0  Schema Diff ✅
 * v0.9.0  Dependency Graph ✅
 * v1.0.0  Stability, diagnostics, and broader PostgreSQL coverage ✅
+* v1.1.0  Migration Generation — semantic diff and runnable `ALTER` up/down scripts 🔜
+* v1.2.0  Live-to-Live Diff & CI/CD — live database comparison, GitHub Action, JSON diff output 🔜
+* v1.3.0  Broader Object Coverage — event triggers, rules, aggregates, operators, casts, publications/subscriptions, composite/range types 🔜
+* v1.4.0  Developer Experience — watch mode, `init` command, HTML diff report, parallel export 🔜
 
 ---
 
