@@ -119,6 +119,39 @@ pgschema-export split-dump \
 
 ---
 
+### Generate a migration between two exports
+
+Compare a baseline export against a target export and generate runnable
+`up`/`down` migration scripts:
+
+```bash
+pgschema-export migrate \
+  --from "./db-schema-old" \
+  --to "./db-schema-new" \
+  --output "./migrations" \
+  --name "add_age_column"
+```
+
+Tables are diffed semantically, so column changes become targeted `ALTER TABLE`
+statements (instead of drop/recreate) and your data is preserved:
+
+```sql
+-- Up migration (apply changes)
+BEGIN;
+ALTER TABLE "public"."users" ADD COLUMN "age" integer DEFAULT 0;
+ALTER TABLE "public"."users" ALTER COLUMN "email" SET NOT NULL;
+COMMIT;
+```
+
+Useful flags:
+
+```bash
+pgschema-export migrate --from ./old --to ./new --preview   # print, don't write
+pgschema-export migrate --from ./old --to ./new --safe      # comment out destructive SQL
+```
+
+---
+
 ## Why not just pg_dump?
 
 `pg_dump` is great for backups.
@@ -156,7 +189,7 @@ PgSchemaExporter is for development workflows:
 * v0.8.0  Schema Diff ✅
 * v0.9.0  Dependency Graph ✅
 * v1.0.0  Stability, diagnostics, and broader PostgreSQL coverage ✅
-* v1.1.0  Migration Generation — semantic diff and runnable `ALTER` up/down scripts 🔜
+* v1.1.0  Migration Generation — semantic diff and runnable `ALTER` up/down scripts ✅
 * v1.2.0  Live-to-Live Diff & CI/CD — live database comparison, GitHub Action, JSON diff output 🔜
 * v1.3.0  Broader Object Coverage — event triggers, rules, aggregates, operators, casts, publications/subscriptions, composite/range types 🔜
 * v1.4.0  Developer Experience — watch mode, `init` command, HTML diff report, parallel export 🔜
@@ -174,7 +207,7 @@ PgSchemaExporter is for development workflows:
 
 ## Release Notes
 
-See [RELEASE_NOTES_1.0.0.md](RELEASE_NOTES_1.0.0.md) for the latest changes.
+See [RELEASE_NOTES_1.1.0.md](RELEASE_NOTES_1.1.0.md) for the latest changes.
 
 ## Feedback
 

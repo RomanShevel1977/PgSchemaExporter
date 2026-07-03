@@ -2,6 +2,7 @@ using PgSchemaExporter.Core;
 using PgSchemaExporter.Core.Configuration;
 using PgSchemaExporter.Core.Diff;
 using PgSchemaExporter.Core.Metadata;
+using PgSchemaExporter.Core.Migration;
 using PgSchemaExporter.Core.Options;
 using PgSchemaExporter.Core.Output;
 using PgSchemaExporter.Core.Scripting;
@@ -14,7 +15,7 @@ if (args.Length == 0 || args.Contains("--help") || args.Contains("-h"))
 
 if (args.Contains("--version") || args.Contains("-v"))
 {
-    Console.WriteLine("pgschema-export 1.0.0");
+    Console.WriteLine("pgschema-export 1.1.0");
     return;
 }
 
@@ -69,6 +70,44 @@ try
         }
 
         Environment.ExitCode = result.HasDifferences ? 2 : 0;
+        return;
+    }
+
+    if (string.Equals(command, "migrate", StringComparison.OrdinalIgnoreCase))
+    {
+        var options = ParseMigrateOptions(args.Skip(1).ToArray());
+
+        var generator = new MigrationGenerator();
+        var script = generator.Generate(options);
+
+        if (!script.HasChanges)
+        {
+            Console.WriteLine("No schema changes detected. No migration was generated.");
+            return;
+        }
+
+        if (options.Preview)
+        {
+            Console.WriteLine(script.RenderUp(options.Safe));
+            Console.WriteLine("-- ----------------------------------------------------------------");
+            Console.WriteLine(script.RenderDown(options.Safe));
+        }
+        else
+        {
+            var writer = new MigrationWriter();
+            var result = await writer.WriteAsync(options, script, DateTimeOffset.UtcNow);
+            Console.WriteLine("Migration generated.");
+            Console.WriteLine($"Up:   {Path.GetFullPath(result.UpFile)}");
+            Console.WriteLine($"Down: {Path.GetFullPath(result.DownFile)}");
+            Console.WriteLine($"Statements: {script.Up.Count} up / {script.Down.Count} down");
+        }
+
+        if (script.HasDestructiveChanges)
+        {
+            Console.WriteLine(options.Safe
+                ? "Note: destructive statements were emitted as comments (--safe). Review before running."
+                : "Warning: this migration contains destructive statements. Review before running.");
+        }
         return;
     }
 
@@ -230,6 +269,60 @@ static SplitDumpOptions ParseSplitDumpOptions(string[] args)
     return options;
 }
 
+static MigrationOptions ParseMigrateOptions(string[] args)
+{
+    var options = new MigrationOptions();
+
+    for (var i = 0; i < args.Length; i++)
+    {
+        var arg = args[i];
+
+        string NextValue()
+        {
+            if (i + 1 >= args.Length)
+                throw new ArgumentException($"Missing value for {arg}");
+
+            return args[++i];
+        }
+
+        switch (arg)
+        {
+            case "--from":
+            case "-f":
+                options.FromDirectory = NextValue();
+                break;
+
+            case "--to":
+            case "-t":
+                options.ToDirectory = NextValue();
+                break;
+
+            case "--output":
+            case "-o":
+                options.OutputDirectory = NextValue();
+                break;
+
+            case "--name":
+            case "-n":
+                options.Name = NextValue();
+                break;
+
+            case "--safe":
+                options.Safe = true;
+                break;
+
+            case "--preview":
+                options.Preview = true;
+                break;
+
+            default:
+                throw new ArgumentException($"Unknown argument: {arg}");
+        }
+    }
+
+    return options;
+}
+
 static SchemaDiffOptions ParseDiffOptions(string[] args)
 {
     var options = new SchemaDiffOptions();
@@ -303,17 +396,19 @@ static string[] Split(string value)
 static void PrintHelp()
 {
     Console.WriteLine("""
-PostgreSQL Git-Native Schema Exporter 1.0.0
+PostgreSQL Git-Native Schema Exporter 1.1.0
 
 Usage:
   pgschema-export export --connection "<connection-string>" --output "./db-schema"
   pgschema-export split-dump --input "./schema.sql" --output "./db-schema"
   pgschema-export diff --left "./old-schema" --right "./new-schema"
+  pgschema-export migrate --from "./old-schema" --to "./new-schema" --output "./migrations"
 
 Commands:
   export       Live export from PostgreSQL using pg_catalog/information_schema
   split-dump   Split existing pg_dump schema-only SQL file into folders
   diff         Compare two exported schema directories and report changes
+  migrate      Generate up/down migration scripts between two exported schemas
 
 Export options:
   -c, --connection       PostgreSQL connection string
@@ -334,6 +429,14 @@ Diff options:
   -r, --right            Right (target) exported schema directory
   -o, --output           Optional path to write the diff report
                          Exit code 2 indicates differences were found.
+
+Migrate options:
+  -f, --from             Baseline (old) exported schema directory
+  -t, --to               Target (new) exported schema directory
+  -o, --output           Output directory for generated migrations. Default: ./migrations
+  -n, --name             Optional name appended to the generated file names
+      --safe             Emit destructive statements (DROP, type changes) as comments
+      --preview          Print the migration to stdout without writing files
 
 Split-dump options:
   -i, --input            Input SQL file created by pg_dump
