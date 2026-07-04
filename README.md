@@ -1,5 +1,5 @@
 ![GitHub release](https://img.shields.io/github/v/release/RomanShevel1977/PgSchemaExporter)
-![License](https://img.shields.io/github/license/RomanShevel1977/PgSchemaExporter)
+[![License](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 ![Stars](https://img.shields.io/github/stars/RomanShevel1977/PgSchemaExporter)
 # PostgreSQL Git-Native Schema Exporter
 
