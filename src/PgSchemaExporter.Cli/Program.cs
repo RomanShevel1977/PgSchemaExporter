@@ -58,14 +58,24 @@ try
         var options = ParseDiffOptions(args.Skip(1).ToArray());
 
         var differ = new SchemaDiffer();
-        var result = differ.Diff(options);
+        SchemaDiffResult result;
+
+        if (!string.IsNullOrWhiteSpace(options.LeftConnectionString) ||
+            !string.IsNullOrWhiteSpace(options.RightConnectionString))
+        {
+            result = await differ.DiffAsync(options);
+        }
+        else
+        {
+            result = differ.Diff(options);
+        }
 
         var reportWriter = new SchemaDiffReportWriter();
-        Console.WriteLine(reportWriter.BuildReport(result));
+        Console.WriteLine(reportWriter.BuildReport(result, options.Format));
 
         if (!string.IsNullOrWhiteSpace(options.OutputFile))
         {
-            await reportWriter.WriteAsync(options.OutputFile, result);
+            await reportWriter.WriteAsync(options.OutputFile, result, options.Format);
             Console.WriteLine($"Report written to: {Path.GetFullPath(options.OutputFile)}");
         }
 
@@ -346,14 +356,32 @@ static SchemaDiffOptions ParseDiffOptions(string[] args)
                 options.LeftDirectory = NextValue();
                 break;
 
+            case "--left-db":
+                options.LeftConnectionString = NextValue();
+                break;
+
             case "--right":
             case "-r":
                 options.RightDirectory = NextValue();
                 break;
 
+            case "--right-db":
+                options.RightConnectionString = NextValue();
+                break;
+
             case "--output":
             case "-o":
                 options.OutputFile = NextValue();
+                break;
+
+            case "--format":
+                var format = NextValue();
+                options.Format = format.ToLowerInvariant() switch
+                {
+                    "json" => DiffFormat.Json,
+                    "text" => DiffFormat.Text,
+                    _ => throw new ArgumentException($"Unknown format: {format}. Use 'text' or 'json'.")
+                };
                 break;
 
             default:
@@ -426,8 +454,11 @@ Export options:
 
 Diff options:
   -l, --left             Left (baseline) exported schema directory
+      --left-db          Left (baseline) live PostgreSQL connection string
   -r, --right            Right (target) exported schema directory
+      --right-db         Right (target) live PostgreSQL connection string
   -o, --output           Optional path to write the diff report
+      --format           Output format: text (default) or json
                          Exit code 2 indicates differences were found.
 
 Migrate options:

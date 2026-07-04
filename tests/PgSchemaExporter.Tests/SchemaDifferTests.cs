@@ -1,5 +1,6 @@
 using PgSchemaExporter.Core.Diff;
 using PgSchemaExporter.Core.Options;
+using System.Text.Json;
 using Xunit;
 
 namespace PgSchemaExporter.Tests;
@@ -53,6 +54,115 @@ public class SchemaDifferTests : IDisposable
 
         Assert.False(result.HasDifferences);
         Assert.Single(result.Unchanged);
+    }
+
+    [Fact]
+    public void DiffOptions_RequiresLeftOrLeftDb()
+    {
+        var options = new SchemaDiffOptions
+        {
+            RightDirectory = _right
+        };
+
+        Assert.Throws<ArgumentException>(() => options.EnsureValid());
+    }
+
+    [Fact]
+    public void DiffOptions_RequiresRightOrRightDb()
+    {
+        var options = new SchemaDiffOptions
+        {
+            LeftDirectory = _left
+        };
+
+        Assert.Throws<ArgumentException>(() => options.EnsureValid());
+    }
+
+    [Fact]
+    public void DiffOptions_AcceptsLeftDb()
+    {
+        var options = new SchemaDiffOptions
+        {
+            LeftConnectionString = "Host=localhost;Database=test",
+            RightDirectory = _right
+        };
+
+        options.EnsureValid();
+    }
+
+    [Fact]
+    public void DiffOptions_AcceptsRightDb()
+    {
+        var options = new SchemaDiffOptions
+        {
+            LeftDirectory = _left,
+            RightConnectionString = "Host=localhost;Database=test"
+        };
+
+        options.EnsureValid();
+    }
+
+    [Fact]
+    public void DiffOptions_AcceptsBothDb()
+    {
+        var options = new SchemaDiffOptions
+        {
+            LeftConnectionString = "Host=localhost;Database=test1",
+            RightConnectionString = "Host=localhost;Database=test2"
+        };
+
+        options.EnsureValid();
+    }
+
+    [Fact]
+    public void DiffReportWriter_GeneratesJsonOutput()
+    {
+        WriteFile(_left, "tables/public.users.sql", "CREATE TABLE users (id int);");
+        WriteFile(_right, "tables/public.users.sql", "CREATE TABLE users (id int);");
+
+        WriteFile(_right, "tables/public.orders.sql", "CREATE TABLE orders (id int);");
+
+        var differ = new SchemaDiffer();
+        var result = differ.Diff(new SchemaDiffOptions { LeftDirectory = _left, RightDirectory = _right });
+
+        var writer = new SchemaDiffReportWriter();
+        var json = writer.BuildReport(result, DiffFormat.Json);
+
+        var parsed = JsonSerializer.Deserialize<JsonElement>(json);
+        Assert.True(parsed.TryGetProperty("added", out var added));
+        Assert.Equal(1, added.GetArrayLength());
+        Assert.Equal("tables/public.orders.sql", added[0].GetString());
+
+        Assert.True(parsed.TryGetProperty("removed", out var removed));
+        Assert.Equal(0, removed.GetArrayLength());
+
+        Assert.True(parsed.TryGetProperty("changed", out var changed));
+        Assert.Equal(0, changed.GetArrayLength());
+
+        Assert.True(parsed.TryGetProperty("unchanged", out var unchanged));
+        Assert.Equal(1, unchanged.GetArrayLength());
+
+        Assert.True(parsed.TryGetProperty("hasDifferences", out var hasDifferences));
+        Assert.True(hasDifferences.GetBoolean());
+    }
+
+    [Fact]
+    public void DiffReportWriter_GeneratesTextOutput()
+    {
+        WriteFile(_left, "tables/public.users.sql", "CREATE TABLE users (id int);");
+        WriteFile(_right, "tables/public.users.sql", "CREATE TABLE users (id int);");
+
+        var differ = new SchemaDiffer();
+        var result = differ.Diff(new SchemaDiffOptions { LeftDirectory = _left, RightDirectory = _right });
+
+        var writer = new SchemaDiffReportWriter();
+        var text = writer.BuildReport(result, DiffFormat.Text);
+
+        Assert.Contains("# Schema diff report", text);
+        Assert.Contains("Added:     0", text);
+        Assert.Contains("Removed:   0", text);
+        Assert.Contains("Changed:   0", text);
+        Assert.Contains("Unchanged: 1", text);
     }
 
     private static void WriteFile(string root, string relativePath, string content)

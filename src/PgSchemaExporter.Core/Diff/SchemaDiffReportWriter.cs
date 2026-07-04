@@ -1,10 +1,30 @@
 using System.Text;
+using System.Text.Json;
+using PgSchemaExporter.Core.Options;
 
 namespace PgSchemaExporter.Core.Diff;
 
 public sealed class SchemaDiffReportWriter
 {
-    public string BuildReport(SchemaDiffResult result)
+    public string BuildReport(SchemaDiffResult result, DiffFormat format = DiffFormat.Text)
+    {
+        return format switch
+        {
+            DiffFormat.Json => BuildJsonReport(result),
+            _ => BuildTextReport(result)
+        };
+    }
+
+    public async Task WriteAsync(string outputFile, SchemaDiffResult result, DiffFormat format = DiffFormat.Text, CancellationToken cancellationToken = default)
+    {
+        var directory = Path.GetDirectoryName(Path.GetFullPath(outputFile));
+        if (!string.IsNullOrEmpty(directory))
+            Directory.CreateDirectory(directory);
+
+        await File.WriteAllTextAsync(outputFile, BuildReport(result, format), cancellationToken);
+    }
+
+    private static string BuildTextReport(SchemaDiffResult result)
     {
         var sb = new StringBuilder();
         sb.AppendLine("# Schema diff report");
@@ -25,13 +45,22 @@ public sealed class SchemaDiffReportWriter
         return sb.ToString();
     }
 
-    public async Task WriteAsync(string outputFile, SchemaDiffResult result, CancellationToken cancellationToken = default)
+    private static string BuildJsonReport(SchemaDiffResult result)
     {
-        var directory = Path.GetDirectoryName(Path.GetFullPath(outputFile));
-        if (!string.IsNullOrEmpty(directory))
-            Directory.CreateDirectory(directory);
+        var json = new
+        {
+            added = result.Added,
+            removed = result.Removed,
+            changed = result.Changed,
+            unchanged = result.Unchanged,
+            hasDifferences = result.HasDifferences
+        };
 
-        await File.WriteAllTextAsync(outputFile, BuildReport(result), cancellationToken);
+        return JsonSerializer.Serialize(json, new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        });
     }
 
     private static void AppendSection(StringBuilder sb, string title, IReadOnlyList<string> items, string marker)

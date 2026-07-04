@@ -165,6 +165,26 @@ PgSchemaExporter is for development workflows:
 
 ---
 
+## Exit codes for CI/CD
+
+The following exit codes are used for CI gating:
+
+- **0** — Success (no differences detected, or operation completed successfully)
+- **1** — Error (invalid arguments, missing files, connection failure, etc.)
+- **2** — Differences detected (used by `diff` command to signal schema changes)
+
+Example CI check:
+
+```bash
+pgschema-export diff --left ./db-schema --right ./db-schema-live --format json
+if [ $? -eq 2 ]; then
+  echo "Schema changes detected!"
+  exit 1
+fi
+```
+
+---
+
 ## Designed for
 
 * Backend developers
@@ -190,7 +210,7 @@ PgSchemaExporter is for development workflows:
 * v0.9.0  Dependency Graph ✅
 * v1.0.0  Stability, diagnostics, and broader PostgreSQL coverage ✅
 * v1.1.0  Migration Generation — semantic diff and runnable `ALTER` up/down scripts ✅
-* v1.2.0  Live-to-Live Diff & CI/CD — live database comparison, GitHub Action, JSON diff output 🔜
+* v1.2.0  Live-to-Live Diff & CI/CD — live database comparison, GitHub Action, JSON diff output ✅
 * v1.3.0  Broader Object Coverage — event triggers, rules, aggregates, operators, casts, publications/subscriptions, composite/range types 🔜
 * v1.4.0  Developer Experience — watch mode, `init` command, HTML diff report, parallel export 🔜
 
@@ -207,7 +227,7 @@ PgSchemaExporter is for development workflows:
 
 ## Release Notes
 
-See [RELEASE_NOTES_1.1.0.md](RELEASE_NOTES_1.1.0.md) for the latest changes.
+See [RELEASE_NOTES_1.2.0.md](RELEASE_NOTES_1.2.0.md) for the latest changes.
 
 ## Feedback
 

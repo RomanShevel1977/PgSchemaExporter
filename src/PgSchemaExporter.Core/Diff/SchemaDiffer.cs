@@ -5,15 +5,71 @@ namespace PgSchemaExporter.Core.Diff;
 /// <summary>
 /// Compares two exported schema directories (the git-native layout) and reports
 /// which object files were added, removed, or changed between them.
+/// Supports comparing directory-to-directory, directory-to-live-database, or
+/// live-database-to-live-database.
 /// </summary>
 public sealed class SchemaDiffer
 {
+    private readonly LiveSchemaExporter _liveExporter = new();
+
+    public async Task<SchemaDiffResult> DiffAsync(
+        SchemaDiffOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        options.EnsureValid();
+
+        var leftTempDir = string.Empty;
+        var rightTempDir = string.Empty;
+
+        try
+        {
+            var leftDir = options.LeftDirectory;
+            if (!string.IsNullOrWhiteSpace(options.LeftConnectionString))
+            {
+                leftDir = await _liveExporter.ExportToTempDirectoryAsync(
+                    options.LeftConnectionString,
+                    BuildExportOptions(options),
+                    cancellationToken);
+                leftTempDir = leftDir;
+            }
+
+            var rightDir = options.RightDirectory;
+            if (!string.IsNullOrWhiteSpace(options.RightConnectionString))
+            {
+                rightDir = await _liveExporter.ExportToTempDirectoryAsync(
+                    options.RightConnectionString,
+                    BuildExportOptions(options),
+                    cancellationToken);
+                rightTempDir = rightDir;
+            }
+
+            return DiffDirectories(leftDir, rightDir);
+        }
+        finally
+        {
+            if (!string.IsNullOrEmpty(leftTempDir))
+                _liveExporter.CleanupTempDirectory(leftTempDir);
+
+            if (!string.IsNullOrEmpty(rightTempDir))
+                _liveExporter.CleanupTempDirectory(rightTempDir);
+        }
+    }
+
     public SchemaDiffResult Diff(SchemaDiffOptions options)
     {
         options.EnsureValid();
 
-        var left = Enumerate(options.LeftDirectory);
-        var right = Enumerate(options.RightDirectory);
+        if (!string.IsNullOrWhiteSpace(options.LeftConnectionString) ||
+            !string.IsNullOrWhiteSpace(options.RightConnectionString))
+            throw new InvalidOperationException("Use DiffAsync for live database comparisons.");
+
+        return DiffDirectories(options.LeftDirectory, options.RightDirectory);
+    }
+
+    private static SchemaDiffResult DiffDirectories(string leftDir, string rightDir)
+    {
+        var left = Enumerate(leftDir);
+        var right = Enumerate(rightDir);
 
         var added = new List<string>();
         var removed = new List<string>();
@@ -46,6 +102,39 @@ public sealed class SchemaDiffer
             Removed = Sorted(removed),
             Changed = Sorted(changed),
             Unchanged = Sorted(unchanged)
+        };
+    }
+
+    private static ExportOptions BuildExportOptions(SchemaDiffOptions diffOptions)
+    {
+        return new ExportOptions
+        {
+            Schemas = ["public"],
+            ExcludeSchemas = ["pg_catalog", "information_schema"],
+            Include = new IncludeOptions
+            {
+                Schemas = true,
+                Extensions = true,
+                Types = true,
+                Sequences = true,
+                Domains = true,
+                ForeignTables = true,
+                Tables = true,
+                Constraints = true,
+                Indexes = true,
+                Views = true,
+                Triggers = true,
+                Policies = true,
+                Comments = true,
+                Grants = true,
+                Functions = true
+            },
+            Format = new FormatOptions
+            {
+                UseIfNotExists = true,
+                SplitConstraints = true,
+                SplitIndexes = true
+            }
         };
     }
 

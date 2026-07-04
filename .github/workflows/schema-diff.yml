@@ -1,0 +1,67 @@
+name: PostgreSQL Schema Diff
+
+on:
+  pull_request:
+    paths:
+      - 'db-schema/**'
+      - '.github/workflows/schema-diff.yml'
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: testdb
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0'
+
+      - name: Build tool
+        run: dotnet build src/PgSchemaExporter.Cli/PgSchemaExporter.Cli.csproj -c Release
+
+      - name: Export current schema from live DB
+        run: |
+          dotnet run --project src/PgSchemaExporter.Cli/PgSchemaExporter.Cli.csproj \
+            export \
+            --connection "Host=localhost;Database=testdb;Username=postgres;Password=postgres" \
+            --output ./db-schema-live
+
+      - name: Diff against committed schema
+        run: |
+          dotnet run --project src/PgSchemaExporter.Cli/PgSchemaExporter.Cli.csproj \
+            diff \
+            --left ./db-schema \
+            --right ./db-schema-live \
+            --format json \
+            --output diff-report.json
+
+      - name: Upload diff report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: schema-diff-report
+          path: diff-report.json
+
+      - name: Fail if schema changed
+        if: hashFiles('diff-report.json') != hashFiles('diff-report.json.empty')
+        run: |
+          echo "::error::Schema changes detected. Please review the diff report artifact."
+          exit 1
