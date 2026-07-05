@@ -81,6 +81,13 @@ public sealed class SchemaExporter
         ("Views", model.Views.Count),
         ("Functions", model.Functions.Count),
         ("Triggers", model.Triggers.Count),
+        ("Event triggers", model.EventTriggers.Count),
+        ("Rules", model.Rules.Count),
+        ("Aggregates", model.Aggregates.Count),
+        ("Operators", model.Operators.Count),
+        ("Casts", model.Casts.Count),
+        ("Publications", model.Publications.Count),
+        ("Subscriptions", model.Subscriptions.Count),
         ("Policies", model.Policies.Count),
         ("Comments", model.Comments.Count),
         ("Grants", model.Grants.Count)

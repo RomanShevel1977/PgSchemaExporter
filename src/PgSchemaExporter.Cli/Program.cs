@@ -431,7 +431,7 @@ static string[] Split(string value)
 static void PrintHelp()
 {
     Console.WriteLine("""
-PostgreSQL Git-Native Schema Exporter 1.3.0
+PostgreSQL Git-Native Schema Exporter 1.3.1
 
 Usage:
   pgschema-export export --connection "<connection-string>" --output "./db-schema"

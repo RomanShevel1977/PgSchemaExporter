@@ -32,7 +32,7 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
             Rules = options.Include.Rules ? await GetRulesAsync(connection, options, cancellationToken) : [],
             Aggregates = options.Include.Aggregates ? await GetAggregatesAsync(connection, options, cancellationToken) : [],
             Operators = options.Include.Operators ? await GetOperatorsAsync(connection, options, cancellationToken) : [],
-            Casts = options.Include.Casts ? await GetCastsAsync(connection, cancellationToken) : [],
+            Casts = options.Include.Casts ? await GetCastsAsync(connection, options, cancellationToken) : [],
             Publications = options.Include.Publications ? await GetPublicationsAsync(connection, cancellationToken) : [],
             Subscriptions = options.Include.Subscriptions ? await GetSubscriptionsAsync(connection, cancellationToken) : [],
             Policies = options.Include.Policies ? await GetPoliciesAsync(connection, options, cancellationToken) : [],
@@ -104,15 +104,27 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
                    t.typname AS type_name,
                    t.typtype::text AS type_kind,
                    array_remove(array_agg(e.enumlabel ORDER BY e.enumsortorder), NULL) AS enum_labels,
-                   CASE WHEN t.typtype = 'c' THEN pg_get_typedef(t.oid) ELSE NULL END AS composite_def,
-                   CASE WHEN t.typtype = 'r' THEN pg_get_typedef(t.oid) ELSE NULL END AS range_def
+                   CASE WHEN t.typtype = 'c' THEN
+                       'CREATE TYPE ' || quote_ident(n.nspname) || '.' || quote_ident(t.typname) || ' AS (' ||
+                       COALESCE((
+                           SELECT string_agg(quote_ident(a.attname) || ' ' || format_type(a.atttypid, a.atttypmod), ', ' ORDER BY a.attnum)
+                           FROM pg_attribute a
+                           WHERE a.attrelid = t.typrelid AND a.attnum > 0 AND NOT a.attisdropped
+                       ), '') || ');'
+                   END AS composite_def,
+                   CASE WHEN t.typtype = 'r' THEN
+                       'CREATE TYPE ' || quote_ident(n.nspname) || '.' || quote_ident(t.typname) || ' AS RANGE (subtype = ' ||
+                       format_type((SELECT rngsubtype FROM pg_range WHERE rngtypid = t.oid), NULL) || ');'
+                   END AS range_def
             FROM pg_type t
             JOIN pg_namespace n ON n.oid = t.typnamespace
             LEFT JOIN pg_enum e ON e.enumtypid = t.oid
             WHERE n.nspname = ANY(@schemas)
               AND NOT n.nspname = ANY(@excludeSchemas)
               AND t.typtype IN ('e', 'c', 'r')
-            GROUP BY n.nspname, t.typname, t.typtype, t.oid
+              AND (t.typtype <> 'c'
+                   OR EXISTS (SELECT 1 FROM pg_class c WHERE c.oid = t.typrelid AND c.relkind = 'c'))
+            GROUP BY n.nspname, t.typname, t.typtype, t.oid, t.typrelid
             ORDER BY n.nspname, t.typname;";
 
         await using var command = new NpgsqlCommand(sql, connection);
@@ -842,13 +854,21 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
     private static async Task<IReadOnlyList<DbEventTrigger>> GetEventTriggersAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
         const string sql = @"
-            SELECT evtname AS event_trigger_name,
-                   evtevent AS event,
-                   evttags AS when_clause,
-                   evtfoid::regproc AS procedure,
-                   pg_get_event_triggerdef(oid) AS definition
-            FROM pg_event_trigger
-            ORDER BY evtname;";
+            SELECT et.evtname AS event_trigger_name,
+                   et.evtevent AS event,
+                   NULLIF(array_to_string(et.evttags, ', '), '') AS when_clause,
+                   quote_ident(n.nspname) || '.' || quote_ident(p.proname) AS procedure,
+                   'CREATE EVENT TRIGGER ' || quote_ident(et.evtname) ||
+                   ' ON ' || et.evtevent ||
+                   COALESCE(' WHEN TAG IN (' || (
+                       SELECT string_agg(quote_literal(tag), ', ')
+                       FROM unnest(et.evttags) AS tag
+                   ) || ')', '') ||
+                   ' EXECUTE FUNCTION ' || quote_ident(n.nspname) || '.' || quote_ident(p.proname) || '();' AS definition
+            FROM pg_event_trigger et
+            JOIN pg_proc p ON p.oid = et.evtfoid
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            ORDER BY et.evtname;";
 
         await using var command = new NpgsqlCommand(sql, connection);
         var result = new List<DbEventTrigger>();
@@ -881,6 +901,7 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
             JOIN pg_namespace n ON n.oid = c.relnamespace
             WHERE n.nspname = ANY(@schemas)
               AND NOT n.nspname = ANY(@excludeSchemas)
+              AND r.rulename <> '_RETURN'
             ORDER BY n.nspname, c.relname, r.rulename;";
 
         await using var command = new NpgsqlCommand(sql, connection);
@@ -908,10 +929,16 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
         const string sql = @"
             SELECT n.nspname AS schema_name,
                    p.proname AS aggregate_name,
-                   format_type(p.proargtypes[0], NULL) AS input_type,
-                   format_type(p.prorettype, NULL) AS state_type,
-                   aggfinalfn::regproc AS finalize_func,
-                   pg_get_functiondef(p.oid) AS definition
+                   pg_get_function_arguments(p.oid) AS input_type,
+                   format_type(a.aggtranstype, NULL) AS state_type,
+                   CASE WHEN a.aggfinalfn <> 0 THEN a.aggfinalfn::regproc::text END AS finalize_func,
+                   'CREATE AGGREGATE ' || quote_ident(n.nspname) || '.' || quote_ident(p.proname) ||
+                   '(' || pg_get_function_arguments(p.oid) || ') (' ||
+                   'SFUNC = ' || a.aggtransfn::regproc::text ||
+                   ', STYPE = ' || format_type(a.aggtranstype, NULL) ||
+                   COALESCE(', FINALFUNC = ' || NULLIF(a.aggfinalfn, 0)::regproc::text, '') ||
+                   COALESCE(', INITCOND = ' || quote_literal(a.agginitval), '') ||
+                   ');' AS definition
             FROM pg_aggregate a
             JOIN pg_proc p ON p.oid = a.aggfnoid
             JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -946,10 +973,14 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
         const string sql = @"
             SELECT n.nspname AS schema_name,
                    o.oprname AS operator_name,
-                   format_type(o.oprleft, NULL) AS left_type,
-                   format_type(o.oprright, NULL) AS right_type,
+                   CASE WHEN o.oprleft <> 0 THEN format_type(o.oprleft, NULL) END AS left_type,
+                   CASE WHEN o.oprright <> 0 THEN format_type(o.oprright, NULL) END AS right_type,
                    format_type(o.oprresult, NULL) AS result_type,
-                   pg_get_operatordef(o.oid) AS definition
+                   'CREATE OPERATOR ' || quote_ident(n.nspname) || '.' || o.oprname || ' (' ||
+                   'FUNCTION = ' || o.oprcode::regproc::text ||
+                   COALESCE(', LEFTARG = ' || format_type(NULLIF(o.oprleft, 0), NULL), '') ||
+                   COALESCE(', RIGHTARG = ' || format_type(NULLIF(o.oprright, 0), NULL), '') ||
+                   ');' AS definition
             FROM pg_operator o
             JOIN pg_namespace n ON n.oid = o.oprnamespace
             WHERE n.nspname = ANY(@schemas)
@@ -968,8 +999,8 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
             {
                 Schema = reader.GetString(0),
                 Name = reader.GetString(1),
-                LeftType = reader.GetString(2),
-                RightType = reader.GetString(3),
+                LeftType = reader.IsDBNull(2) ? "" : reader.GetString(2),
+                RightType = reader.IsDBNull(3) ? "" : reader.GetString(3),
                 ResultType = reader.GetString(4),
                 Definition = reader.GetString(5)
             });
@@ -978,20 +1009,37 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
         return result;
     }
 
-    private static async Task<IReadOnlyList<DbCast>> GetCastsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    private static async Task<IReadOnlyList<DbCast>> GetCastsAsync(NpgsqlConnection connection, ExportOptions options, CancellationToken cancellationToken)
     {
         const string sql = @"
             SELECT format_type(c.castsource, NULL) AS source_type,
                    format_type(c.casttarget, NULL) AS target_type,
-                   pg_get_castdef(c.oid) AS definition
+                   'CREATE CAST (' || format_type(c.castsource, NULL) || ' AS ' || format_type(c.casttarget, NULL) || ')' ||
+                   CASE c.castmethod
+                       WHEN 'f' THEN ' WITH FUNCTION ' || c.castfunc::regprocedure::text
+                       WHEN 'i' THEN ' WITH INOUT'
+                       ELSE ' WITHOUT FUNCTION'
+                   END ||
+                   CASE c.castcontext
+                       WHEN 'a' THEN ' AS ASSIGNMENT'
+                       WHEN 'i' THEN ' AS IMPLICIT'
+                       ELSE ''
+                   END || ';' AS definition
             FROM pg_cast c
-            WHERE NOT c.castisimplicit
-            ORDER BY c.castsource, c.casttarget;";
+            JOIN pg_type src ON src.oid = c.castsource
+            JOIN pg_type tgt ON tgt.oid = c.casttarget
+            JOIN pg_namespace sn ON sn.oid = src.typnamespace
+            JOIN pg_namespace tn ON tn.oid = tgt.typnamespace
+            WHERE (sn.nspname = ANY(@schemas) OR tn.nspname = ANY(@schemas))
+              AND NOT (sn.nspname = ANY(@excludeSchemas) AND tn.nspname = ANY(@excludeSchemas))
+            ORDER BY 1, 2;";
 
         await using var command = new NpgsqlCommand(sql, connection);
-        var result = new List<DbCast>();
+        AddSchemaParameters(command, options);
 
+        var result = new List<DbCast>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
         while (await reader.ReadAsync(cancellationToken))
         {
             result.Add(new DbCast
@@ -1008,11 +1056,25 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
     private static async Task<IReadOnlyList<DbPublication>> GetPublicationsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
         const string sql = @"
-            SELECT pubname AS publication_name,
-                   array_to_string(puballtables, ',') AS tables,
-                   pg_get_publicationdef(oid) AS definition
-            FROM pg_publication
-            ORDER BY pubname;";
+            SELECT p.pubname AS publication_name,
+                   CASE WHEN p.puballtables THEN NULL
+                        ELSE (SELECT string_agg(quote_ident(pt.schemaname) || '.' || quote_ident(pt.tablename), ', ')
+                              FROM pg_publication_tables pt WHERE pt.pubname = p.pubname)
+                   END AS tables,
+                   'CREATE PUBLICATION ' || quote_ident(p.pubname) ||
+                   CASE WHEN p.puballtables THEN ' FOR ALL TABLES'
+                        ELSE COALESCE(' FOR TABLE ' || (
+                                 SELECT string_agg(quote_ident(pt.schemaname) || '.' || quote_ident(pt.tablename), ', ')
+                                 FROM pg_publication_tables pt WHERE pt.pubname = p.pubname), '')
+                   END ||
+                   ' WITH (publish = ' || quote_literal(array_to_string(ARRAY[
+                       CASE WHEN p.pubinsert THEN 'insert' END,
+                       CASE WHEN p.pubupdate THEN 'update' END,
+                       CASE WHEN p.pubdelete THEN 'delete' END,
+                       CASE WHEN p.pubtruncate THEN 'truncate' END
+                   ], ', ')) || ');' AS definition
+            FROM pg_publication p
+            ORDER BY p.pubname;";
 
         await using var command = new NpgsqlCommand(sql, connection);
         var result = new List<DbPublication>();
@@ -1034,26 +1096,39 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
     private static async Task<IReadOnlyList<DbSubscription>> GetSubscriptionsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
         const string sql = @"
-            SELECT subname AS subscription_name,
-                   subpublications[1] AS publication,
-                   subconninfo AS connection_string,
-                   pg_get_subscriptiondef(oid) AS definition
-            FROM pg_subscription
-            ORDER BY subname;";
+            SELECT s.subname AS subscription_name,
+                   s.subpublications[1] AS publication,
+                   s.subconninfo AS connection_string,
+                   'CREATE SUBSCRIPTION ' || quote_ident(s.subname) ||
+                   ' CONNECTION ' || quote_literal(COALESCE(s.subconninfo, '')) ||
+                   ' PUBLICATION ' || array_to_string(ARRAY(
+                       SELECT quote_ident(x) FROM unnest(s.subpublications) AS x), ', ') ||
+                   ';' AS definition
+            FROM pg_subscription s
+            WHERE s.subdbid = (SELECT oid FROM pg_database WHERE datname = current_database())
+            ORDER BY s.subname;";
 
-        await using var command = new NpgsqlCommand(sql, connection);
         var result = new List<DbSubscription>();
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        try
         {
-            result.Add(new DbSubscription
+            await using var command = new NpgsqlCommand(sql, connection);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
             {
-                Name = reader.GetString(0),
-                Publication = reader.GetString(1),
-                ConnectionString = reader.IsDBNull(2) ? null : reader.GetString(2),
-                Definition = reader.GetString(3)
-            });
+                result.Add(new DbSubscription
+                {
+                    Name = reader.GetString(0),
+                    Publication = reader.GetString(1),
+                    ConnectionString = reader.IsDBNull(2) ? null : reader.GetString(2),
+                    Definition = reader.GetString(3)
+                });
+            }
+        }
+        catch (PostgresException ex) when (ex.SqlState == "42501")
+        {
+            // pg_subscription.subconninfo is restricted to superusers.
+            // Degrade gracefully rather than failing the entire export.
         }
 
         return result;
