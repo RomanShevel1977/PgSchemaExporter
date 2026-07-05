@@ -28,6 +28,13 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
             Indexes = options.Include.Indexes ? await GetIndexesAsync(connection, options, cancellationToken) : [],
             Views = options.Include.Views ? await GetViewsAsync(connection, options, cancellationToken) : [],
             Triggers = options.Include.Triggers ? await GetTriggersAsync(connection, options, cancellationToken) : [],
+            EventTriggers = options.Include.EventTriggers ? await GetEventTriggersAsync(connection, cancellationToken) : [],
+            Rules = options.Include.Rules ? await GetRulesAsync(connection, options, cancellationToken) : [],
+            Aggregates = options.Include.Aggregates ? await GetAggregatesAsync(connection, options, cancellationToken) : [],
+            Operators = options.Include.Operators ? await GetOperatorsAsync(connection, options, cancellationToken) : [],
+            Casts = options.Include.Casts ? await GetCastsAsync(connection, cancellationToken) : [],
+            Publications = options.Include.Publications ? await GetPublicationsAsync(connection, cancellationToken) : [],
+            Subscriptions = options.Include.Subscriptions ? await GetSubscriptionsAsync(connection, cancellationToken) : [],
             Policies = options.Include.Policies ? await GetPoliciesAsync(connection, options, cancellationToken) : [],
             Comments = options.Include.Comments ? await GetCommentsAsync(connection, options, cancellationToken) : [],
             Grants = options.Include.Grants ? await GetGrantsAsync(connection, options, cancellationToken) : [],
@@ -96,14 +103,16 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
             SELECT n.nspname AS schema_name,
                    t.typname AS type_name,
                    t.typtype::text AS type_kind,
-                   array_remove(array_agg(e.enumlabel ORDER BY e.enumsortorder), NULL) AS enum_labels
+                   array_remove(array_agg(e.enumlabel ORDER BY e.enumsortorder), NULL) AS enum_labels,
+                   CASE WHEN t.typtype = 'c' THEN pg_get_typedef(t.oid) ELSE NULL END AS composite_def,
+                   CASE WHEN t.typtype = 'r' THEN pg_get_typedef(t.oid) ELSE NULL END AS range_def
             FROM pg_type t
             JOIN pg_namespace n ON n.oid = t.typnamespace
             LEFT JOIN pg_enum e ON e.enumtypid = t.oid
             WHERE n.nspname = ANY(@schemas)
               AND NOT n.nspname = ANY(@excludeSchemas)
-              AND t.typtype IN ('e')
-            GROUP BY n.nspname, t.typname, t.typtype
+              AND t.typtype IN ('e', 'c', 'r')
+            GROUP BY n.nspname, t.typname, t.typtype, t.oid
             ORDER BY n.nspname, t.typname;";
 
         await using var command = new NpgsqlCommand(sql, connection);
@@ -123,7 +132,9 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
                 Schema = reader.GetString(0),
                 Name = reader.GetString(1),
                 Kind = reader.GetString(2),
-                EnumLabels = labels
+                EnumLabels = labels,
+                CompositeDefinition = reader.IsDBNull(4) ? null : reader.GetString(4),
+                RangeDefinition = reader.IsDBNull(5) ? null : reader.GetString(5)
             });
         }
 
@@ -821,6 +832,226 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
                 Schema = reader.GetString(0),
                 Name = reader.GetString(1),
                 ArgumentsIdentity = reader.GetString(2),
+                Definition = reader.GetString(3)
+            });
+        }
+
+        return result;
+    }
+
+    private static async Task<IReadOnlyList<DbEventTrigger>> GetEventTriggersAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        const string sql = @"
+            SELECT evtname AS event_trigger_name,
+                   evtevent AS event,
+                   evttags AS when_clause,
+                   evtfoid::regproc AS procedure,
+                   pg_get_event_triggerdef(oid) AS definition
+            FROM pg_event_trigger
+            ORDER BY evtname;";
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        var result = new List<DbEventTrigger>();
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(new DbEventTrigger
+            {
+                Name = reader.GetString(0),
+                Event = reader.GetString(1),
+                When = reader.IsDBNull(2) ? null : reader.GetString(2),
+                Procedure = reader.GetString(3),
+                Definition = reader.GetString(4)
+            });
+        }
+
+        return result;
+    }
+
+    private static async Task<IReadOnlyList<DbRule>> GetRulesAsync(NpgsqlConnection connection, ExportOptions options, CancellationToken cancellationToken)
+    {
+        const string sql = @"
+            SELECT n.nspname AS schema_name,
+                   c.relname AS table_name,
+                   r.rulename AS rule_name,
+                   pg_get_ruledef(r.oid, true) AS definition
+            FROM pg_rewrite r
+            JOIN pg_class c ON c.oid = r.ev_class
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = ANY(@schemas)
+              AND NOT n.nspname = ANY(@excludeSchemas)
+            ORDER BY n.nspname, c.relname, r.rulename;";
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        AddSchemaParameters(command, options);
+
+        var result = new List<DbRule>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(new DbRule
+            {
+                Schema = reader.GetString(0),
+                TableName = reader.GetString(1),
+                Name = reader.GetString(2),
+                Definition = reader.GetString(3)
+            });
+        }
+
+        return result;
+    }
+
+    private static async Task<IReadOnlyList<DbAggregate>> GetAggregatesAsync(NpgsqlConnection connection, ExportOptions options, CancellationToken cancellationToken)
+    {
+        const string sql = @"
+            SELECT n.nspname AS schema_name,
+                   p.proname AS aggregate_name,
+                   format_type(p.proargtypes[0], NULL) AS input_type,
+                   format_type(p.prorettype, NULL) AS state_type,
+                   aggfinalfn::regproc AS finalize_func,
+                   pg_get_functiondef(p.oid) AS definition
+            FROM pg_aggregate a
+            JOIN pg_proc p ON p.oid = a.aggfnoid
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = ANY(@schemas)
+              AND NOT n.nspname = ANY(@excludeSchemas)
+            ORDER BY n.nspname, p.proname;";
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        AddSchemaParameters(command, options);
+
+        var result = new List<DbAggregate>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(new DbAggregate
+            {
+                Schema = reader.GetString(0),
+                Name = reader.GetString(1),
+                InputType = reader.GetString(2),
+                StateType = reader.IsDBNull(3) ? null : reader.GetString(3),
+                FinalizeFunc = reader.IsDBNull(4) ? null : reader.GetString(4),
+                Definition = reader.GetString(5)
+            });
+        }
+
+        return result;
+    }
+
+    private static async Task<IReadOnlyList<DbOperator>> GetOperatorsAsync(NpgsqlConnection connection, ExportOptions options, CancellationToken cancellationToken)
+    {
+        const string sql = @"
+            SELECT n.nspname AS schema_name,
+                   o.oprname AS operator_name,
+                   format_type(o.oprleft, NULL) AS left_type,
+                   format_type(o.oprright, NULL) AS right_type,
+                   format_type(o.oprresult, NULL) AS result_type,
+                   pg_get_operatordef(o.oid) AS definition
+            FROM pg_operator o
+            JOIN pg_namespace n ON n.oid = o.oprnamespace
+            WHERE n.nspname = ANY(@schemas)
+              AND NOT n.nspname = ANY(@excludeSchemas)
+            ORDER BY n.nspname, o.oprname;";
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        AddSchemaParameters(command, options);
+
+        var result = new List<DbOperator>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(new DbOperator
+            {
+                Schema = reader.GetString(0),
+                Name = reader.GetString(1),
+                LeftType = reader.GetString(2),
+                RightType = reader.GetString(3),
+                ResultType = reader.GetString(4),
+                Definition = reader.GetString(5)
+            });
+        }
+
+        return result;
+    }
+
+    private static async Task<IReadOnlyList<DbCast>> GetCastsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        const string sql = @"
+            SELECT format_type(c.castsource, NULL) AS source_type,
+                   format_type(c.casttarget, NULL) AS target_type,
+                   pg_get_castdef(c.oid) AS definition
+            FROM pg_cast c
+            WHERE NOT c.castisimplicit
+            ORDER BY c.castsource, c.casttarget;";
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        var result = new List<DbCast>();
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(new DbCast
+            {
+                SourceType = reader.GetString(0),
+                TargetType = reader.GetString(1),
+                Definition = reader.GetString(2)
+            });
+        }
+
+        return result;
+    }
+
+    private static async Task<IReadOnlyList<DbPublication>> GetPublicationsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        const string sql = @"
+            SELECT pubname AS publication_name,
+                   array_to_string(puballtables, ',') AS tables,
+                   pg_get_publicationdef(oid) AS definition
+            FROM pg_publication
+            ORDER BY pubname;";
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        var result = new List<DbPublication>();
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(new DbPublication
+            {
+                Name = reader.GetString(0),
+                Tables = reader.IsDBNull(1) ? null : reader.GetString(1),
+                Definition = reader.GetString(2)
+            });
+        }
+
+        return result;
+    }
+
+    private static async Task<IReadOnlyList<DbSubscription>> GetSubscriptionsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        const string sql = @"
+            SELECT subname AS subscription_name,
+                   subpublications[1] AS publication,
+                   subconninfo AS connection_string,
+                   pg_get_subscriptiondef(oid) AS definition
+            FROM pg_subscription
+            ORDER BY subname;";
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        var result = new List<DbSubscription>();
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(new DbSubscription
+            {
+                Name = reader.GetString(0),
+                Publication = reader.GetString(1),
+                ConnectionString = reader.IsDBNull(2) ? null : reader.GetString(2),
                 Definition = reader.GetString(3)
             });
         }

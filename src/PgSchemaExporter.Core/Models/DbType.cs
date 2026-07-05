@@ -6,4 +6,6 @@ public sealed class DbType
     public string Name { get; set; } = "";
     public string Kind { get; set; } = "";
     public IReadOnlyList<string> EnumLabels { get; set; } = [];
+    public string? CompositeDefinition { get; set; }
+    public string? RangeDefinition { get; set; }
 }

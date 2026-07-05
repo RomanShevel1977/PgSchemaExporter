@@ -43,6 +43,13 @@ public sealed class IncludeOptions
     public bool Indexes { get; set; } = true;
     public bool Views { get; set; } = true;
     public bool Triggers { get; set; } = true;
+    public bool EventTriggers { get; set; } = true;
+    public bool Rules { get; set; } = true;
+    public bool Aggregates { get; set; } = true;
+    public bool Operators { get; set; } = true;
+    public bool Casts { get; set; } = true;
+    public bool Publications { get; set; } = true;
+    public bool Subscriptions { get; set; } = true;
     public bool Policies { get; set; } = true;
     public bool Comments { get; set; } = true;
     public bool Grants { get; set; } = true;

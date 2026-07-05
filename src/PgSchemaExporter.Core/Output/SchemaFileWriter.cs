@@ -19,6 +19,13 @@ public sealed class SchemaFileWriter
     private readonly IndexScriptGenerator _indexGenerator = new();
     private readonly ViewScriptGenerator _viewGenerator = new();
     private readonly FunctionScriptGenerator _functionGenerator = new();
+    private readonly EventTriggerScriptGenerator _eventTriggerGenerator = new();
+    private readonly RuleScriptGenerator _ruleGenerator = new();
+    private readonly AggregateScriptGenerator _aggregateGenerator = new();
+    private readonly OperatorScriptGenerator _operatorGenerator = new();
+    private readonly CastScriptGenerator _castGenerator = new();
+    private readonly PublicationScriptGenerator _publicationGenerator = new();
+    private readonly SubscriptionScriptGenerator _subscriptionGenerator = new();
 
     public Task<FileWriteResult> WriteAsync(
         string outputDirectory,
@@ -109,6 +116,27 @@ public sealed class SchemaFileWriter
 
         foreach (var trigger in model.Triggers.OrderBy(x => x.Schema).ThenBy(x => x.TableName).ThenBy(x => x.Name))
             result.TriggerFiles.Add(await WriteFileAsync(outputDirectory, "triggers", $"{Safe(trigger.Schema)}.{Safe(trigger.TableName)}.{Safe(trigger.Name)}.sql", trigger.Definition, cancellationToken));
+
+        foreach (var eventTrigger in model.EventTriggers.OrderBy(x => x.Name))
+            result.EventTriggerFiles.Add(await WriteFileAsync(outputDirectory, "event_triggers", $"{Safe(eventTrigger.Name)}.sql", ApplyFormat(_eventTriggerGenerator.Generate(eventTrigger), new FormatOptions()), cancellationToken));
+
+        foreach (var rule in model.Rules.OrderBy(x => x.Schema).ThenBy(x => x.TableName).ThenBy(x => x.Name))
+            result.RuleFiles.Add(await WriteFileAsync(outputDirectory, "rules", $"{Safe(rule.Schema)}.{Safe(rule.TableName)}.{Safe(rule.Name)}.sql", ApplyFormat(_ruleGenerator.Generate(rule), new FormatOptions()), cancellationToken));
+
+        foreach (var aggregate in model.Aggregates.OrderBy(x => x.Schema).ThenBy(x => x.Name))
+            result.AggregateFiles.Add(await WriteFileAsync(outputDirectory, "aggregates", $"{Safe(aggregate.Schema)}.{Safe(aggregate.Name)}.sql", ApplyFormat(_aggregateGenerator.Generate(aggregate), new FormatOptions()), cancellationToken));
+
+        foreach (var op in model.Operators.OrderBy(x => x.Schema).ThenBy(x => x.Name))
+            result.OperatorFiles.Add(await WriteFileAsync(outputDirectory, "operators", $"{Safe(op.Schema)}.{Safe(op.Name)}.sql", ApplyFormat(_operatorGenerator.Generate(op), new FormatOptions()), cancellationToken));
+
+        foreach (var cast in model.Casts.OrderBy(x => x.SourceType).ThenBy(x => x.TargetType))
+            result.CastFiles.Add(await WriteFileAsync(outputDirectory, "casts", $"{Safe(cast.SourceType)}_to_{Safe(cast.TargetType)}.sql", ApplyFormat(_castGenerator.Generate(cast), new FormatOptions()), cancellationToken));
+
+        foreach (var publication in model.Publications.OrderBy(x => x.Name))
+            result.PublicationFiles.Add(await WriteFileAsync(outputDirectory, "publications", $"{Safe(publication.Name)}.sql", ApplyFormat(_publicationGenerator.Generate(publication), new FormatOptions()), cancellationToken));
+
+        foreach (var subscription in model.Subscriptions.OrderBy(x => x.Name))
+            result.SubscriptionFiles.Add(await WriteFileAsync(outputDirectory, "subscriptions", $"{Safe(subscription.Name)}.sql", ApplyFormat(_subscriptionGenerator.Generate(subscription), new FormatOptions()), cancellationToken));
 
         foreach (var policy in model.Policies.OrderBy(x => x.Schema).ThenBy(x => x.TableName).ThenBy(x => x.Name))
             result.PolicyFiles.Add(await WriteFileAsync(outputDirectory, "policies", $"{Safe(policy.Schema)}.{Safe(policy.TableName)}.{Safe(policy.Name)}.sql", policy.Definition, cancellationToken));

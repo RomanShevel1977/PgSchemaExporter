@@ -13,6 +13,13 @@ public sealed class DatabaseModel
     public IReadOnlyList<DbIndex> Indexes { get; set; } = [];
     public IReadOnlyList<DbView> Views { get; set; } = [];
     public IReadOnlyList<DbTrigger> Triggers { get; set; } = [];
+    public IReadOnlyList<DbEventTrigger> EventTriggers { get; set; } = [];
+    public IReadOnlyList<DbRule> Rules { get; set; } = [];
+    public IReadOnlyList<DbAggregate> Aggregates { get; set; } = [];
+    public IReadOnlyList<DbOperator> Operators { get; set; } = [];
+    public IReadOnlyList<DbCast> Casts { get; set; } = [];
+    public IReadOnlyList<DbPublication> Publications { get; set; } = [];
+    public IReadOnlyList<DbSubscription> Subscriptions { get; set; } = [];
     public IReadOnlyList<DbPolicy> Policies { get; set; } = [];
     public IReadOnlyList<DbComment> Comments { get; set; } = [];
     public IReadOnlyList<DbGrant> Grants { get; set; } = [];

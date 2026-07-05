@@ -407,6 +407,13 @@ static void ApplyIncludeToggle(IncludeOptions include, string name, bool value)
         case "indexes": include.Indexes = value; break;
         case "views": include.Views = value; break;
         case "triggers": include.Triggers = value; break;
+        case "event-triggers": include.EventTriggers = value; break;
+        case "rules": include.Rules = value; break;
+        case "aggregates": include.Aggregates = value; break;
+        case "operators": include.Operators = value; break;
+        case "casts": include.Casts = value; break;
+        case "publications": include.Publications = value; break;
+        case "subscriptions": include.Subscriptions = value; break;
         case "policies": include.Policies = value; break;
         case "comments": include.Comments = value; break;
         case "grants": include.Grants = value; break;
@@ -424,7 +431,7 @@ static string[] Split(string value)
 static void PrintHelp()
 {
     Console.WriteLine("""
-PostgreSQL Git-Native Schema Exporter 1.1.0
+PostgreSQL Git-Native Schema Exporter 1.3.0
 
 Usage:
   pgschema-export export --connection "<connection-string>" --output "./db-schema"
@@ -450,7 +457,9 @@ Export options:
       --exclude-<kind>   Exclude an object kind from the export
                          kinds: schemas, extensions, types, sequences, domains,
                          foreign-tables, tables, constraints, indexes, views,
-                         triggers, policies, comments, grants, functions
+                         triggers, event-triggers, rules, aggregates, operators,
+                         casts, publications, subscriptions, policies, comments,
+                         grants, functions
 
 Diff options:
   -l, --left             Left (baseline) exported schema directory

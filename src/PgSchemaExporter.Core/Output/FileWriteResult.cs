@@ -13,10 +13,14 @@ public sealed class FileWriteResult
     public List<string> IndexFiles { get; } = [];
     public List<string> ViewFiles { get; } = [];
     public List<string> FunctionFiles { get; } = [];
-
-    // These are currently used mostly by split-dump mode.
-    // Live export support for these object kinds can be added incrementally.
     public List<string> TriggerFiles { get; } = [];
+    public List<string> EventTriggerFiles { get; } = [];
+    public List<string> RuleFiles { get; } = [];
+    public List<string> AggregateFiles { get; } = [];
+    public List<string> OperatorFiles { get; } = [];
+    public List<string> CastFiles { get; } = [];
+    public List<string> PublicationFiles { get; } = [];
+    public List<string> SubscriptionFiles { get; } = [];
     public List<string> PolicyFiles { get; } = [];
     public List<string> CommentFiles { get; } = [];
     public List<string> GrantFiles { get; } = [];
@@ -36,6 +40,13 @@ public sealed class FileWriteResult
             .Concat(FunctionFiles)
             .Concat(ViewFiles)
             .Concat(TriggerFiles)
+            .Concat(EventTriggerFiles)
+            .Concat(RuleFiles)
+            .Concat(AggregateFiles)
+            .Concat(OperatorFiles)
+            .Concat(CastFiles)
+            .Concat(PublicationFiles)
+            .Concat(SubscriptionFiles)
             .Concat(PolicyFiles)
             .Concat(CommentFiles)
             .Concat(GrantFiles)

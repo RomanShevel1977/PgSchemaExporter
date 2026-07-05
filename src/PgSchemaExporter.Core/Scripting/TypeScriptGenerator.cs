@@ -7,9 +7,17 @@ public sealed class TypeScriptGenerator : ISqlScriptGenerator<DbType>
 {
     public string Generate(DbType model)
     {
-        if (model.Kind != "e")
-            return $"-- Unsupported type kind: {model.Kind}{Environment.NewLine}";
+        return model.Kind switch
+        {
+            "e" => GenerateEnum(model),
+            "c" when model.CompositeDefinition != null => model.CompositeDefinition,
+            "r" when model.RangeDefinition != null => model.RangeDefinition,
+            _ => $"-- Unsupported type kind: {model.Kind}{Environment.NewLine}"
+        };
+    }
 
+    private static string GenerateEnum(DbType model)
+    {
         var labels = string.Join(", ", model.EnumLabels.Select(SqlLiteral.String));
 
         var sb = new StringBuilder();
