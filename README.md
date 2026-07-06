@@ -87,7 +87,7 @@ pgschema-export.exe --help
 
 ## Usage
 
-See the full guide [USER_GUIDE.md](USER_GUIDE.md)
+See the full guide [USAGE_GUIDE.md](USAGE_GUIDE.md)
 
 ### Export from PostgreSQL
 
