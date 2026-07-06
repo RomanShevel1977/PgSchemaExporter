@@ -33,5 +33,6 @@ public sealed class SchemaDiffOptions
 public enum DiffFormat
 {
     Text,
-    Json
+    Json,
+    Html
 }

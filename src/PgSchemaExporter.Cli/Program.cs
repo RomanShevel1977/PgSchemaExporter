@@ -15,7 +15,7 @@ if (args.Length == 0 || args.Contains("--help") || args.Contains("-h"))
 
 if (args.Contains("--version") || args.Contains("-v"))
 {
-    Console.WriteLine("pgschema-export 1.1.0");
+    Console.WriteLine("pgschema-export 1.4.0");
     return;
 }
 
@@ -140,6 +140,55 @@ try
         return;
     }
 
+    if (string.Equals(command, "init", StringComparison.OrdinalIgnoreCase))
+    {
+        var (path, force) = ParseInitOptions(args.Skip(1).ToArray());
+
+        await ExportConfigWriter.WriteAsync(path, force);
+
+        Console.WriteLine("Config template created.");
+        Console.WriteLine($"File: {Path.GetFullPath(path)}");
+        Console.WriteLine("Edit the connection string, then run: pgschema-export export --config " + path);
+        return;
+    }
+
+    if (string.Equals(command, "watch", StringComparison.OrdinalIgnoreCase))
+    {
+        var options = ParseDiffOptions(args.Skip(1).ToArray());
+
+        using var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) =>
+        {
+            e.Cancel = true;
+            cts.Cancel();
+        };
+
+        var watcher = new SchemaWatcher();
+        var reportWriter = new SchemaDiffReportWriter();
+
+        Console.WriteLine("Watching for schema changes. Press Ctrl+C to stop.");
+        Console.WriteLine($"Left:  {Path.GetFullPath(options.LeftDirectory)}");
+        Console.WriteLine($"Right: {Path.GetFullPath(options.RightDirectory)}");
+
+        try
+        {
+            await watcher.WatchAsync(options, result =>
+            {
+                Console.WriteLine();
+                Console.WriteLine($"[{DateTimeOffset.Now:HH:mm:ss}] Schema diff:");
+                Console.WriteLine(reportWriter.BuildReport(result, options.Format));
+                return Task.CompletedTask;
+            }, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Graceful shutdown on Ctrl+C.
+        }
+
+        Console.WriteLine("Watch stopped.");
+        return;
+    }
+
     Console.Error.WriteLine($"Unknown command: {command}");
     PrintHelp();
     Environment.ExitCode = 1;
@@ -213,6 +262,10 @@ static async Task<ExportOptions> ParseExportOptionsAsync(string[] args)
 
             case "--dry-run":
                 options.DryRun = true;
+                break;
+
+            case "--parallel":
+                options.Parallel = true;
                 break;
 
             default:
@@ -336,6 +389,7 @@ static MigrationOptions ParseMigrateOptions(string[] args)
 static SchemaDiffOptions ParseDiffOptions(string[] args)
 {
     var options = new SchemaDiffOptions();
+    var formatExplicit = false;
 
     for (var i = 0; i < args.Length; i++)
     {
@@ -380,8 +434,10 @@ static SchemaDiffOptions ParseDiffOptions(string[] args)
                 {
                     "json" => DiffFormat.Json,
                     "text" => DiffFormat.Text,
-                    _ => throw new ArgumentException($"Unknown format: {format}. Use 'text' or 'json'.")
+                    "html" => DiffFormat.Html,
+                    _ => throw new ArgumentException($"Unknown format: {format}. Use 'text', 'json', or 'html'.")
                 };
+                formatExplicit = true;
                 break;
 
             default:
@@ -389,7 +445,54 @@ static SchemaDiffOptions ParseDiffOptions(string[] args)
         }
     }
 
+    // Infer HTML/JSON format from the output file extension when not set explicitly.
+    if (!formatExplicit && !string.IsNullOrWhiteSpace(options.OutputFile))
+    {
+        options.Format = Path.GetExtension(options.OutputFile).ToLowerInvariant() switch
+        {
+            ".html" or ".htm" => DiffFormat.Html,
+            ".json" => DiffFormat.Json,
+            _ => options.Format
+        };
+    }
+
     return options;
+}
+
+static (string Path, bool Force) ParseInitOptions(string[] args)
+{
+    var path = ExportConfigWriter.DefaultFileName;
+    var force = false;
+
+    for (var i = 0; i < args.Length; i++)
+    {
+        var arg = args[i];
+
+        string NextValue()
+        {
+            if (i + 1 >= args.Length)
+                throw new ArgumentException($"Missing value for {arg}");
+
+            return args[++i];
+        }
+
+        switch (arg)
+        {
+            case "--output":
+            case "-o":
+                path = NextValue();
+                break;
+
+            case "--force":
+                force = true;
+                break;
+
+            default:
+                throw new ArgumentException($"Unknown argument: {arg}");
+        }
+    }
+
+    return (path, force);
 }
 
 static void ApplyIncludeToggle(IncludeOptions include, string name, bool value)
@@ -431,19 +534,27 @@ static string[] Split(string value)
 static void PrintHelp()
 {
     Console.WriteLine("""
-PostgreSQL Git-Native Schema Exporter 1.3.1
+PostgreSQL Git-Native Schema Exporter 1.4.0
 
 Usage:
+  pgschema-export init [--output "./pgschema-export.json"]
   pgschema-export export --connection "<connection-string>" --output "./db-schema"
   pgschema-export split-dump --input "./schema.sql" --output "./db-schema"
   pgschema-export diff --left "./old-schema" --right "./new-schema"
+  pgschema-export watch --left "./old-schema" --right "./new-schema"
   pgschema-export migrate --from "./old-schema" --to "./new-schema" --output "./migrations"
 
 Commands:
+  init         Create a pgschema-export.json config template
   export       Live export from PostgreSQL using pg_catalog/information_schema
   split-dump   Split existing pg_dump schema-only SQL file into folders
   diff         Compare two exported schema directories and report changes
+  watch        Continuously re-run a directory diff as files change
   migrate      Generate up/down migration scripts between two exported schemas
+
+Init options:
+  -o, --output           Path for the config file. Default: pgschema-export.json
+      --force            Overwrite an existing config file
 
 Export options:
   -c, --connection       PostgreSQL connection string
@@ -452,6 +563,7 @@ Export options:
       --exclude-schemas  Comma-separated schemas to exclude
       --clean            Delete output directory before export
       --dry-run          Connect and report what would be exported without writing files
+      --parallel         Run metadata queries concurrently (faster on large databases)
       --config           Path to pgschema-export.json
       --include-<kind>   Include an object kind in the export
       --exclude-<kind>   Exclude an object kind from the export
@@ -467,8 +579,14 @@ Diff options:
   -r, --right            Right (target) exported schema directory
       --right-db         Right (target) live PostgreSQL connection string
   -o, --output           Optional path to write the diff report
-      --format           Output format: text (default) or json
+      --format           Output format: text (default), json, or html
+                         Inferred from the --output extension (.json/.html) if omitted.
                          Exit code 2 indicates differences were found.
+
+Watch options:
+  -l, --left             Left (baseline) exported schema directory
+  -r, --right            Right (target) exported schema directory
+      --format           Console report format: text (default), json, or html
 
 Migrate options:
   -f, --from             Baseline (old) exported schema directory

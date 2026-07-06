@@ -7,10 +7,22 @@ namespace PgSchemaExporter.Core.Metadata;
 
 public sealed class PostgresMetadataProvider : IMetadataProvider
 {
+    private const int MaxParallelQueries = 8;
+
     public async Task<DatabaseModel> LoadAsync(
         string connectionString,
         ExportOptions options,
         CancellationToken cancellationToken = default)
+    {
+        return options.Parallel
+            ? await LoadParallelAsync(connectionString, options, cancellationToken)
+            : await LoadSequentialAsync(connectionString, options, cancellationToken);
+    }
+
+    private static async Task<DatabaseModel> LoadSequentialAsync(
+        string connectionString,
+        ExportOptions options,
+        CancellationToken cancellationToken)
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -40,6 +52,98 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
             Grants = options.Include.Grants ? await GetGrantsAsync(connection, options, cancellationToken) : [],
             Functions = options.Include.Functions ? await GetFunctionsAsync(connection, options, cancellationToken) : []
         };
+    }
+
+    private static async Task<DatabaseModel> LoadParallelAsync(
+        string connectionString,
+        ExportOptions options,
+        CancellationToken cancellationToken)
+    {
+        // NpgsqlConnection allows only one active command at a time, so each parallel
+        // query runs on its own pooled connection. Concurrency is bounded to avoid
+        // exhausting server connection limits.
+        using var gate = new SemaphoreSlim(MaxParallelQueries);
+
+        Task<IReadOnlyList<T>> Run<T>(bool include, Func<NpgsqlConnection, CancellationToken, Task<IReadOnlyList<T>>> query)
+        {
+            if (!include)
+                return Task.FromResult<IReadOnlyList<T>>([]);
+
+            return RunOnOwnConnectionAsync(connectionString, gate, query, cancellationToken);
+        }
+
+        var schemas = Run(options.Include.Schemas, (c, ct) => GetSchemasAsync(c, options, ct));
+        var extensions = Run(options.Include.Extensions, GetExtensionsAsync);
+        var types = Run(options.Include.Types, (c, ct) => GetTypesAsync(c, options, ct));
+        var sequences = Run(options.Include.Sequences, (c, ct) => GetSequencesAsync(c, options, ct));
+        var domains = Run(options.Include.Domains, (c, ct) => GetDomainsAsync(c, options, ct));
+        var foreignTables = Run(options.Include.ForeignTables, (c, ct) => GetForeignTablesAsync(c, options, ct));
+        var tables = Run(options.Include.Tables, (c, ct) => GetTablesAsync(c, options, ct));
+        var constraints = Run(options.Include.Constraints, (c, ct) => GetConstraintsAsync(c, options, ct));
+        var indexes = Run(options.Include.Indexes, (c, ct) => GetIndexesAsync(c, options, ct));
+        var views = Run(options.Include.Views, (c, ct) => GetViewsAsync(c, options, ct));
+        var triggers = Run(options.Include.Triggers, (c, ct) => GetTriggersAsync(c, options, ct));
+        var eventTriggers = Run(options.Include.EventTriggers, GetEventTriggersAsync);
+        var rules = Run(options.Include.Rules, (c, ct) => GetRulesAsync(c, options, ct));
+        var aggregates = Run(options.Include.Aggregates, (c, ct) => GetAggregatesAsync(c, options, ct));
+        var operators = Run(options.Include.Operators, (c, ct) => GetOperatorsAsync(c, options, ct));
+        var casts = Run(options.Include.Casts, (c, ct) => GetCastsAsync(c, options, ct));
+        var publications = Run(options.Include.Publications, GetPublicationsAsync);
+        var subscriptions = Run(options.Include.Subscriptions, GetSubscriptionsAsync);
+        var policies = Run(options.Include.Policies, (c, ct) => GetPoliciesAsync(c, options, ct));
+        var comments = Run(options.Include.Comments, (c, ct) => GetCommentsAsync(c, options, ct));
+        var grants = Run(options.Include.Grants, (c, ct) => GetGrantsAsync(c, options, ct));
+        var functions = Run(options.Include.Functions, (c, ct) => GetFunctionsAsync(c, options, ct));
+
+        await Task.WhenAll(
+            schemas, extensions, types, sequences, domains, foreignTables, tables,
+            constraints, indexes, views, triggers, eventTriggers, rules, aggregates,
+            operators, casts, publications, subscriptions, policies, comments, grants, functions);
+
+        return new DatabaseModel
+        {
+            Schemas = await schemas,
+            Extensions = await extensions,
+            Types = await types,
+            Sequences = await sequences,
+            Domains = await domains,
+            ForeignTables = await foreignTables,
+            Tables = await tables,
+            Constraints = await constraints,
+            Indexes = await indexes,
+            Views = await views,
+            Triggers = await triggers,
+            EventTriggers = await eventTriggers,
+            Rules = await rules,
+            Aggregates = await aggregates,
+            Operators = await operators,
+            Casts = await casts,
+            Publications = await publications,
+            Subscriptions = await subscriptions,
+            Policies = await policies,
+            Comments = await comments,
+            Grants = await grants,
+            Functions = await functions
+        };
+    }
+
+    private static async Task<IReadOnlyList<T>> RunOnOwnConnectionAsync<T>(
+        string connectionString,
+        SemaphoreSlim gate,
+        Func<NpgsqlConnection, CancellationToken, Task<IReadOnlyList<T>>> query,
+        CancellationToken cancellationToken)
+    {
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = new NpgsqlConnection(connectionString);
+            await connection.OpenAsync(cancellationToken);
+            return await query(connection, cancellationToken);
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     private static async Task<IReadOnlyList<DbSchema>> GetSchemasAsync(NpgsqlConnection connection, ExportOptions options, CancellationToken cancellationToken)

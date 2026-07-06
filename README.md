@@ -213,7 +213,7 @@ fi
 * v1.2.0  Live-to-Live Diff & CI/CD — live database comparison, GitHub Action, JSON diff output ✅
 * v1.3.0  Broader Object Coverage — event triggers, rules, aggregates, operators, casts, publications/subscriptions, composite/range types ✅
 * v1.3.1  Bug fixes — catalog-based DDL generation for the new object kinds ✅
-* v1.4.0  Developer Experience — watch mode, `init` command, HTML diff report, parallel export 🔜
+* v1.4.0  Developer Experience — watch mode, `init` command, HTML diff report, parallel export ✅
 
 ---
 
@@ -228,7 +228,7 @@ fi
 
 ## Release Notes
 
-See [RELEASE_NOTES_1.3.1.md](RELEASE_NOTES_1.3.1.md) for the latest changes.
+See [RELEASE_NOTES_1.4.0.md](RELEASE_NOTES_1.4.0.md) for the latest changes.
 
 ## Feedback
 

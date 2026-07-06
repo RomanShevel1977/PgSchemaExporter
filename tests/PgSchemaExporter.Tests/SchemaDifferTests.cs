@@ -165,6 +165,39 @@ public class SchemaDifferTests : IDisposable
         Assert.Contains("Unchanged: 1", text);
     }
 
+    [Fact]
+    public void DiffReportWriter_GeneratesHtmlOutput()
+    {
+        WriteFile(_left, "tables/public.users.sql", "CREATE TABLE users (id int);");
+        WriteFile(_right, "tables/public.users.sql", "CREATE TABLE users (id int);");
+        WriteFile(_right, "tables/public.orders.sql", "CREATE TABLE orders (id int);");
+
+        var differ = new SchemaDiffer();
+        var result = differ.Diff(new SchemaDiffOptions { LeftDirectory = _left, RightDirectory = _right });
+
+        var writer = new SchemaDiffReportWriter();
+        var html = writer.BuildReport(result, DiffFormat.Html);
+
+        Assert.StartsWith("<!DOCTYPE html>", html);
+        Assert.Contains("Schema diff report", html);
+        Assert.Contains("tables/public.orders.sql", html);
+        Assert.Contains("</html>", html);
+    }
+
+    [Fact]
+    public void DiffReportWriter_HtmlEncodesFileNames()
+    {
+        WriteFile(_right, "views/public.a&b.sql", "SELECT 1;");
+
+        var differ = new SchemaDiffer();
+        var result = differ.Diff(new SchemaDiffOptions { LeftDirectory = _left, RightDirectory = _right });
+
+        var writer = new SchemaDiffReportWriter();
+        var html = writer.BuildReport(result, DiffFormat.Html);
+
+        Assert.Contains("a&amp;b", html);
+    }
+
     private static void WriteFile(string root, string relativePath, string content)
     {
         var full = Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar));
