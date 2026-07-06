@@ -217,6 +217,37 @@ fi
 * v1.3.1  Bug fixes — catalog-based DDL generation for the new object kinds ✅
 * v1.4.0  Developer Experience — watch mode, `init` command, HTML diff report, parallel export ✅
 
+What will be done in the next releases:
+
+### v1.5.0 - Developer Experience Enhancements
+**Features:**
+- Add structured logging with ILogger
+- Add progress reporting for long operations (export, diff with live DB)
+- Add `--verbose` and `--quiet` flags
+- Improve error messages with specific suggestions
+- Add config file validation with detailed error messages
+
+### v1.6.0 - Advanced Diff Features
+**Features:**
+- Add customizable options for live database diff (schemas, format options)
+- Add parallel mode support for live database diff
+- Add `--ignore` patterns for diff (e.g., ignore comments, ignore whitespace changes)
+- Add context-aware diff (show line-by-line changes within files)
+- Add diff summary statistics (number of objects changed by type)
+
+### v1.7.0 - Performance and Scalability
+**Features:**
+- Add metadata query caching for repeated operations
+- Add incremental export (only export changed objects since last export)
+- Add export resume capability (resume interrupted exports)
+- Add concurrent file writing for large exports
+- Add memory-efficient streaming for very large databases
+
+**Performance:**
+- Benchmark and optimize parallel query execution
+- Add connection pool configuration options
+- Add timeout configuration for database operations
+
 ---
 
 ## Example use cases
