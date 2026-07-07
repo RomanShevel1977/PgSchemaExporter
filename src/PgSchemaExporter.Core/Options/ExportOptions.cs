@@ -23,11 +23,17 @@ public sealed class ExportOptions
         if (Schemas is null || Schemas.Length == 0 || Schemas.Any(string.IsNullOrWhiteSpace))
             throw new ArgumentException("At least one schema is required.");
 
-        Schemas = Schemas
+        // Normalize schemas: trim whitespace and remove duplicates
+        var normalized = Schemas
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Select(x => x.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+
+        if (normalized.Length == 0)
+            throw new ArgumentException("At least one schema is required.");
+
+        Schemas = normalized;
     }
 }
 

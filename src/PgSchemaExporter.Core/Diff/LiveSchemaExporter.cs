@@ -30,7 +30,14 @@ public sealed class LiveSchemaExporter
 
     public void CleanupTempDirectory(string tempDir)
     {
-        if (Directory.Exists(tempDir))
-            Directory.Delete(tempDir, recursive: true);
+        try
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+        catch
+        {
+            // Log but don't throw - cleanup failures shouldn't mask original errors
+        }
     }
 }

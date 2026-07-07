@@ -1223,7 +1223,7 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
                 result.Add(new DbSubscription
                 {
                     Name = reader.GetString(0),
-                    Publication = reader.GetString(1),
+                    Publication = reader.IsDBNull(1) ? string.Empty : reader.GetString(1),
                     ConnectionString = reader.IsDBNull(2) ? null : reader.GetString(2),
                     Definition = reader.GetString(3)
                 });

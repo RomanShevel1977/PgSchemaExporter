@@ -59,8 +59,20 @@ public sealed class SchemaWatcher
             await Task.Delay(_debounceMilliseconds, cancellationToken);
 
             // Drain any additional signal accumulated during the debounce window.
-            if (trigger.CurrentCount > 0)
-                await trigger.WaitAsync(cancellationToken);
+            while (trigger.CurrentCount > 0)
+            {
+                try
+                {
+                    await trigger.WaitAsync(cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+            }
+
+            if (cancellationToken.IsCancellationRequested)
+                break;
 
             await onChangeAsync(_differ.Diff(options));
         }

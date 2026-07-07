@@ -79,7 +79,7 @@ public class CliEndToEndTests : IAsyncLifetime
         // Assert
         Assert.True(Directory.Exists(outputDir));
         Assert.True(summary.TotalObjects > 0);
-        Assert.Contains(summary.Counts, c => c.ObjectKind == "tables" && c.Count > 0);
+        Assert.Contains(summary.Counts, c => c.ObjectKind == "Tables" && c.Count > 0);
 
         // Verify files were created
         var tablesDir = Path.Combine(outputDir, "schemas", "public", "tables");
