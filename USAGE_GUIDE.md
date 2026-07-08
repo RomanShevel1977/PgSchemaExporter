@@ -30,7 +30,7 @@ Complete guide to the `pgschema-export` utility for exporting, comparing, and mi
 - Generating migration scripts between schema versions
 - Monitoring schema changes in real-time
 
-**Version:** 1.4.0
+**Version:** 1.5.0
 
 ---
 
@@ -56,7 +56,7 @@ pgschema-export -v
 
 Output:
 ```
-pgschema-export 1.4.0
+pgschema-export 1.5.0
 ```
 
 ### Getting Help
@@ -1106,6 +1106,18 @@ pgschema-export watch \
 
 ## Version History
 
+### 1.5.0
+- Added `--verbose` and `--quiet` global flags
+- Added progress reporting for export and live-database diff
+- Added structured logging (ILogger) across export/diff paths
+- Added actionable error messages with suggestions
+- Added detailed configuration file validation
+
+### 1.4.1
+- Fixed watcher cancellation during the debounce window
+- Hardened temp-directory cleanup and subscription null-handling
+- Normalized schema names (trim + de-duplicate)
+
 ### 1.4.0
 - Added `init` command for configuration template generation
 - Added `watch` command for real-time schema monitoring
@@ -1128,6 +1140,6 @@ pgschema-export watch \
 ## Additional Resources
 
 - **README.md**: Project overview and quick start
-- **RELEASE_NOTES_1.4.0.md**: Detailed release notes for current version
+- **RELEASE_NOTES_1.5.0.md**: Detailed release notes for current version
 - **PostgreSQL Documentation**: https://www.postgresql.org/docs/
 - **Npgsql Documentation**: https://www.npgsql.org/doc/

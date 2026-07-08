@@ -14,26 +14,44 @@ public sealed class ExportOptions
 
     public void EnsureValidForExport()
     {
-        if (string.IsNullOrWhiteSpace(ConnectionString))
-            throw new ArgumentException("Connection string is required.");
-
-        if (string.IsNullOrWhiteSpace(OutputDirectory))
-            throw new ArgumentException("Output directory is required.");
-
-        if (Schemas is null || Schemas.Length == 0 || Schemas.Any(string.IsNullOrWhiteSpace))
-            throw new ArgumentException("At least one schema is required.");
+        var errors = Validate();
+        if (errors.Count > 0)
+            throw new ArgumentException(string.Join(" ", errors));
 
         // Normalize schemas: trim whitespace and remove duplicates
-        var normalized = Schemas
+        Schemas = Schemas
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Select(x => x.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
 
-        if (normalized.Length == 0)
-            throw new ArgumentException("At least one schema is required.");
+    /// <summary>
+    /// Collects every validation problem instead of throwing on the first one, so
+    /// callers can report them all at once with actionable guidance.
+    /// </summary>
+    public IReadOnlyList<string> Validate()
+    {
+        var errors = new List<string>();
 
-        Schemas = normalized;
+        if (string.IsNullOrWhiteSpace(ConnectionString))
+            errors.Add("Connection string is required. Set 'connectionString' (or pass --connection).");
+
+        if (string.IsNullOrWhiteSpace(OutputDirectory))
+            errors.Add("Output directory is required. Set 'outputDirectory' (or pass --output).");
+
+        if (Schemas is null || Schemas.Length == 0 || Schemas.All(string.IsNullOrWhiteSpace))
+            errors.Add("At least one schema is required. Set 'schemas' to a non-empty list (e.g. [\"public\"]).");
+        else if (Schemas.Any(string.IsNullOrWhiteSpace))
+            errors.Add("The 'schemas' list contains empty entries. Remove blank values.");
+
+        if (Include is null)
+            errors.Add("The 'include' section is missing or null.");
+
+        if (Format is null)
+            errors.Add("The 'format' section is missing or null.");
+
+        return errors;
     }
 }
 

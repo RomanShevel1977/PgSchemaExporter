@@ -216,16 +216,10 @@ fi
 * v1.3.0  Broader Object Coverage — event triggers, rules, aggregates, operators, casts, publications/subscriptions, composite/range types ✅
 * v1.3.1  Bug fixes — catalog-based DDL generation for the new object kinds ✅
 * v1.4.0  Developer Experience — watch mode, `init` command, HTML diff report, parallel export ✅
+* v1.4.1  Bug fixes — watcher cancellation, temp-dir cleanup, subscription null-handling, schema normalization ✅
+* v1.5.0  Developer Experience Enhancements — structured logging, progress reporting, `--verbose`/`--quiet`, actionable errors, config validation ✅
 
 What will be done in the next releases:
-
-### v1.5.0 - Developer Experience Enhancements
-**Features:**
-- Add structured logging with ILogger
-- Add progress reporting for long operations (export, diff with live DB)
-- Add `--verbose` and `--quiet` flags
-- Improve error messages with specific suggestions
-- Add config file validation with detailed error messages
 
 ### v1.6.0 - Advanced Diff Features
 **Features:**
@@ -261,7 +255,7 @@ What will be done in the next releases:
 
 ## Release Notes
 
-See [RELEASE_NOTES_1.4.0.md](RELEASE_NOTES_1.4.0.md) for the latest changes.
+See [RELEASE_NOTES_1.5.0.md](RELEASE_NOTES_1.5.0.md) for the latest changes.
 
 ## Feedback
 

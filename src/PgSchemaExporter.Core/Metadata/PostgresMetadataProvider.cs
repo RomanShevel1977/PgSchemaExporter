@@ -1,5 +1,9 @@
 using Npgsql;
+using System.Diagnostics;
 using System.Linq;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using PgSchemaExporter.Core.Diagnostics;
 using PgSchemaExporter.Core.Models;
 using PgSchemaExporter.Core.Options;
 
@@ -9,54 +13,90 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
 {
     private const int MaxParallelQueries = 8;
 
+    // Number of object kinds loaded; used to report progress totals.
+    private const int ObjectKindCount = 22;
+
     public async Task<DatabaseModel> LoadAsync(
         string connectionString,
         ExportOptions options,
+        IProgressReporter? progress = null,
+        ILogger? logger = null,
         CancellationToken cancellationToken = default)
     {
-        return options.Parallel
-            ? await LoadParallelAsync(connectionString, options, cancellationToken)
-            : await LoadSequentialAsync(connectionString, options, cancellationToken);
+        progress ??= NullProgressReporter.Instance;
+        logger ??= NullLogger.Instance;
+
+        var stopwatch = Stopwatch.StartNew();
+        progress.Start(
+            options.Parallel ? "Loading metadata (parallel)" : "Loading metadata",
+            ObjectKindCount);
+
+        var model = options.Parallel
+            ? await LoadParallelAsync(connectionString, options, progress, logger, cancellationToken)
+            : await LoadSequentialAsync(connectionString, options, progress, logger, cancellationToken);
+
+        stopwatch.Stop();
+        logger.LogInformation("Metadata loaded in {ElapsedMs} ms", stopwatch.ElapsedMilliseconds);
+        progress.Complete($"Metadata loaded in {stopwatch.ElapsedMilliseconds} ms");
+        return model;
     }
 
     private static async Task<DatabaseModel> LoadSequentialAsync(
         string connectionString,
         ExportOptions options,
+        IProgressReporter progress,
+        ILogger logger,
         CancellationToken cancellationToken)
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
 
+        async Task<IReadOnlyList<T>> Load<T>(
+            string kind,
+            bool include,
+            Func<Task<IReadOnlyList<T>>> query)
+        {
+            if (!include)
+                return [];
+
+            progress.Step($"Loading {kind}");
+            var result = await query();
+            logger.LogDebug("Loaded {Count} {Kind}", result.Count, kind);
+            return result;
+        }
+
         return new DatabaseModel
         {
-            Schemas = options.Include.Schemas ? await GetSchemasAsync(connection, options, cancellationToken) : [],
-            Extensions = options.Include.Extensions ? await GetExtensionsAsync(connection, cancellationToken) : [],
-            Types = options.Include.Types ? await GetTypesAsync(connection, options, cancellationToken) : [],
-            Sequences = options.Include.Sequences ? await GetSequencesAsync(connection, options, cancellationToken) : [],
-            Domains = options.Include.Domains ? await GetDomainsAsync(connection, options, cancellationToken) : [],
-            ForeignTables = options.Include.ForeignTables ? await GetForeignTablesAsync(connection, options, cancellationToken) : [],
-            Tables = options.Include.Tables ? await GetTablesAsync(connection, options, cancellationToken) : [],
-            Constraints = options.Include.Constraints ? await GetConstraintsAsync(connection, options, cancellationToken) : [],
-            Indexes = options.Include.Indexes ? await GetIndexesAsync(connection, options, cancellationToken) : [],
-            Views = options.Include.Views ? await GetViewsAsync(connection, options, cancellationToken) : [],
-            Triggers = options.Include.Triggers ? await GetTriggersAsync(connection, options, cancellationToken) : [],
-            EventTriggers = options.Include.EventTriggers ? await GetEventTriggersAsync(connection, cancellationToken) : [],
-            Rules = options.Include.Rules ? await GetRulesAsync(connection, options, cancellationToken) : [],
-            Aggregates = options.Include.Aggregates ? await GetAggregatesAsync(connection, options, cancellationToken) : [],
-            Operators = options.Include.Operators ? await GetOperatorsAsync(connection, options, cancellationToken) : [],
-            Casts = options.Include.Casts ? await GetCastsAsync(connection, options, cancellationToken) : [],
-            Publications = options.Include.Publications ? await GetPublicationsAsync(connection, cancellationToken) : [],
-            Subscriptions = options.Include.Subscriptions ? await GetSubscriptionsAsync(connection, cancellationToken) : [],
-            Policies = options.Include.Policies ? await GetPoliciesAsync(connection, options, cancellationToken) : [],
-            Comments = options.Include.Comments ? await GetCommentsAsync(connection, options, cancellationToken) : [],
-            Grants = options.Include.Grants ? await GetGrantsAsync(connection, options, cancellationToken) : [],
-            Functions = options.Include.Functions ? await GetFunctionsAsync(connection, options, cancellationToken) : []
+            Schemas = await Load("schemas", options.Include.Schemas, () => GetSchemasAsync(connection, options, cancellationToken)),
+            Extensions = await Load("extensions", options.Include.Extensions, () => GetExtensionsAsync(connection, cancellationToken)),
+            Types = await Load("types", options.Include.Types, () => GetTypesAsync(connection, options, cancellationToken)),
+            Sequences = await Load("sequences", options.Include.Sequences, () => GetSequencesAsync(connection, options, cancellationToken)),
+            Domains = await Load("domains", options.Include.Domains, () => GetDomainsAsync(connection, options, cancellationToken)),
+            ForeignTables = await Load("foreign tables", options.Include.ForeignTables, () => GetForeignTablesAsync(connection, options, cancellationToken)),
+            Tables = await Load("tables", options.Include.Tables, () => GetTablesAsync(connection, options, cancellationToken)),
+            Constraints = await Load("constraints", options.Include.Constraints, () => GetConstraintsAsync(connection, options, cancellationToken)),
+            Indexes = await Load("indexes", options.Include.Indexes, () => GetIndexesAsync(connection, options, cancellationToken)),
+            Views = await Load("views", options.Include.Views, () => GetViewsAsync(connection, options, cancellationToken)),
+            Triggers = await Load("triggers", options.Include.Triggers, () => GetTriggersAsync(connection, options, cancellationToken)),
+            EventTriggers = await Load("event triggers", options.Include.EventTriggers, () => GetEventTriggersAsync(connection, cancellationToken)),
+            Rules = await Load("rules", options.Include.Rules, () => GetRulesAsync(connection, options, cancellationToken)),
+            Aggregates = await Load("aggregates", options.Include.Aggregates, () => GetAggregatesAsync(connection, options, cancellationToken)),
+            Operators = await Load("operators", options.Include.Operators, () => GetOperatorsAsync(connection, options, cancellationToken)),
+            Casts = await Load("casts", options.Include.Casts, () => GetCastsAsync(connection, options, cancellationToken)),
+            Publications = await Load("publications", options.Include.Publications, () => GetPublicationsAsync(connection, cancellationToken)),
+            Subscriptions = await Load("subscriptions", options.Include.Subscriptions, () => GetSubscriptionsAsync(connection, cancellationToken)),
+            Policies = await Load("policies", options.Include.Policies, () => GetPoliciesAsync(connection, options, cancellationToken)),
+            Comments = await Load("comments", options.Include.Comments, () => GetCommentsAsync(connection, options, cancellationToken)),
+            Grants = await Load("grants", options.Include.Grants, () => GetGrantsAsync(connection, options, cancellationToken)),
+            Functions = await Load("functions", options.Include.Functions, () => GetFunctionsAsync(connection, options, cancellationToken))
         };
     }
 
     private static async Task<DatabaseModel> LoadParallelAsync(
         string connectionString,
         ExportOptions options,
+        IProgressReporter progress,
+        ILogger logger,
         CancellationToken cancellationToken)
     {
         // NpgsqlConnection allows only one active command at a time, so each parallel
@@ -64,36 +104,42 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
         // exhausting server connection limits.
         using var gate = new SemaphoreSlim(MaxParallelQueries);
 
-        Task<IReadOnlyList<T>> Run<T>(bool include, Func<NpgsqlConnection, CancellationToken, Task<IReadOnlyList<T>>> query)
+        Task<IReadOnlyList<T>> Run<T>(string kind, bool include, Func<NpgsqlConnection, CancellationToken, Task<IReadOnlyList<T>>> query)
         {
             if (!include)
                 return Task.FromResult<IReadOnlyList<T>>([]);
 
-            return RunOnOwnConnectionAsync(connectionString, gate, query, cancellationToken);
+            return RunOnOwnConnectionAsync(connectionString, gate, async (c, ct) =>
+            {
+                var result = await query(c, ct);
+                progress.Step($"Loaded {kind}");
+                logger.LogDebug("Loaded {Count} {Kind}", result.Count, kind);
+                return result;
+            }, cancellationToken);
         }
 
-        var schemas = Run(options.Include.Schemas, (c, ct) => GetSchemasAsync(c, options, ct));
-        var extensions = Run(options.Include.Extensions, GetExtensionsAsync);
-        var types = Run(options.Include.Types, (c, ct) => GetTypesAsync(c, options, ct));
-        var sequences = Run(options.Include.Sequences, (c, ct) => GetSequencesAsync(c, options, ct));
-        var domains = Run(options.Include.Domains, (c, ct) => GetDomainsAsync(c, options, ct));
-        var foreignTables = Run(options.Include.ForeignTables, (c, ct) => GetForeignTablesAsync(c, options, ct));
-        var tables = Run(options.Include.Tables, (c, ct) => GetTablesAsync(c, options, ct));
-        var constraints = Run(options.Include.Constraints, (c, ct) => GetConstraintsAsync(c, options, ct));
-        var indexes = Run(options.Include.Indexes, (c, ct) => GetIndexesAsync(c, options, ct));
-        var views = Run(options.Include.Views, (c, ct) => GetViewsAsync(c, options, ct));
-        var triggers = Run(options.Include.Triggers, (c, ct) => GetTriggersAsync(c, options, ct));
-        var eventTriggers = Run(options.Include.EventTriggers, GetEventTriggersAsync);
-        var rules = Run(options.Include.Rules, (c, ct) => GetRulesAsync(c, options, ct));
-        var aggregates = Run(options.Include.Aggregates, (c, ct) => GetAggregatesAsync(c, options, ct));
-        var operators = Run(options.Include.Operators, (c, ct) => GetOperatorsAsync(c, options, ct));
-        var casts = Run(options.Include.Casts, (c, ct) => GetCastsAsync(c, options, ct));
-        var publications = Run(options.Include.Publications, GetPublicationsAsync);
-        var subscriptions = Run(options.Include.Subscriptions, GetSubscriptionsAsync);
-        var policies = Run(options.Include.Policies, (c, ct) => GetPoliciesAsync(c, options, ct));
-        var comments = Run(options.Include.Comments, (c, ct) => GetCommentsAsync(c, options, ct));
-        var grants = Run(options.Include.Grants, (c, ct) => GetGrantsAsync(c, options, ct));
-        var functions = Run(options.Include.Functions, (c, ct) => GetFunctionsAsync(c, options, ct));
+        var schemas = Run("schemas", options.Include.Schemas, (c, ct) => GetSchemasAsync(c, options, ct));
+        var extensions = Run("extensions", options.Include.Extensions, GetExtensionsAsync);
+        var types = Run("types", options.Include.Types, (c, ct) => GetTypesAsync(c, options, ct));
+        var sequences = Run("sequences", options.Include.Sequences, (c, ct) => GetSequencesAsync(c, options, ct));
+        var domains = Run("domains", options.Include.Domains, (c, ct) => GetDomainsAsync(c, options, ct));
+        var foreignTables = Run("foreign tables", options.Include.ForeignTables, (c, ct) => GetForeignTablesAsync(c, options, ct));
+        var tables = Run("tables", options.Include.Tables, (c, ct) => GetTablesAsync(c, options, ct));
+        var constraints = Run("constraints", options.Include.Constraints, (c, ct) => GetConstraintsAsync(c, options, ct));
+        var indexes = Run("indexes", options.Include.Indexes, (c, ct) => GetIndexesAsync(c, options, ct));
+        var views = Run("views", options.Include.Views, (c, ct) => GetViewsAsync(c, options, ct));
+        var triggers = Run("triggers", options.Include.Triggers, (c, ct) => GetTriggersAsync(c, options, ct));
+        var eventTriggers = Run("event triggers", options.Include.EventTriggers, GetEventTriggersAsync);
+        var rules = Run("rules", options.Include.Rules, (c, ct) => GetRulesAsync(c, options, ct));
+        var aggregates = Run("aggregates", options.Include.Aggregates, (c, ct) => GetAggregatesAsync(c, options, ct));
+        var operators = Run("operators", options.Include.Operators, (c, ct) => GetOperatorsAsync(c, options, ct));
+        var casts = Run("casts", options.Include.Casts, (c, ct) => GetCastsAsync(c, options, ct));
+        var publications = Run("publications", options.Include.Publications, GetPublicationsAsync);
+        var subscriptions = Run("subscriptions", options.Include.Subscriptions, GetSubscriptionsAsync);
+        var policies = Run("policies", options.Include.Policies, (c, ct) => GetPoliciesAsync(c, options, ct));
+        var comments = Run("comments", options.Include.Comments, (c, ct) => GetCommentsAsync(c, options, ct));
+        var grants = Run("grants", options.Include.Grants, (c, ct) => GetGrantsAsync(c, options, ct));
+        var functions = Run("functions", options.Include.Functions, (c, ct) => GetFunctionsAsync(c, options, ct));
 
         await Task.WhenAll(
             schemas, extensions, types, sequences, domains, foreignTables, tables,

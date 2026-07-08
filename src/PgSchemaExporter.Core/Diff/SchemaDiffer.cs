@@ -1,3 +1,6 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using PgSchemaExporter.Core.Diagnostics;
 using PgSchemaExporter.Core.Options;
 
 namespace PgSchemaExporter.Core.Diff;
@@ -14,8 +17,13 @@ public sealed class SchemaDiffer
 
     public async Task<SchemaDiffResult> DiffAsync(
         SchemaDiffOptions options,
+        IProgressReporter? progress = null,
+        ILogger? logger = null,
         CancellationToken cancellationToken = default)
     {
+        progress ??= NullProgressReporter.Instance;
+        logger ??= NullLogger.Instance;
+
         options.EnsureValid();
 
         var leftTempDir = string.Empty;
@@ -26,9 +34,12 @@ public sealed class SchemaDiffer
             var leftDir = options.LeftDirectory;
             if (!string.IsNullOrWhiteSpace(options.LeftConnectionString))
             {
+                progress.Step("Exporting left database");
                 leftDir = await _liveExporter.ExportToTempDirectoryAsync(
                     options.LeftConnectionString,
                     BuildExportOptions(options),
+                    progress,
+                    logger,
                     cancellationToken);
                 leftTempDir = leftDir;
             }
@@ -36,13 +47,17 @@ public sealed class SchemaDiffer
             var rightDir = options.RightDirectory;
             if (!string.IsNullOrWhiteSpace(options.RightConnectionString))
             {
+                progress.Step("Exporting right database");
                 rightDir = await _liveExporter.ExportToTempDirectoryAsync(
                     options.RightConnectionString,
                     BuildExportOptions(options),
+                    progress,
+                    logger,
                     cancellationToken);
                 rightTempDir = rightDir;
             }
 
+            progress.Step("Comparing schemas");
             return DiffDirectories(leftDir, rightDir);
         }
         finally

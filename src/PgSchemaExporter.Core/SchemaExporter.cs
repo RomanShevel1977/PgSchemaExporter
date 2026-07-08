@@ -1,3 +1,6 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using PgSchemaExporter.Core.Diagnostics;
 using PgSchemaExporter.Core.Metadata;
 using PgSchemaExporter.Core.Models;
 using PgSchemaExporter.Core.Options;
@@ -28,14 +31,23 @@ public sealed class SchemaExporter
         _readmeWriter = readmeWriter;
     }
 
-    public async Task<ExportSummary> ExportAsync(ExportOptions options, CancellationToken cancellationToken = default)
+    public async Task<ExportSummary> ExportAsync(
+        ExportOptions options,
+        IProgressReporter? progress = null,
+        ILogger? logger = null,
+        CancellationToken cancellationToken = default)
     {
+        progress ??= NullProgressReporter.Instance;
+        logger ??= NullLogger.Instance;
+
         Validate(options);
 
-        var model = await _metadataProvider.LoadAsync(options.ConnectionString, options, cancellationToken);
+        var model = await _metadataProvider.LoadAsync(
+            options.ConnectionString, options, progress, logger, cancellationToken);
 
         if (options.DryRun)
         {
+            logger.LogInformation("Dry run: discovered {Count} objects", CountObjects(model).Sum(c => c.Count));
             return new ExportSummary
             {
                 DryRun = true,
@@ -45,20 +57,27 @@ public sealed class SchemaExporter
         }
 
         if (options.CleanOutputDirectory && Directory.Exists(options.OutputDirectory))
+        {
+            progress.Step("Cleaning output directory");
             Directory.Delete(options.OutputDirectory, recursive: true);
+        }
 
         Directory.CreateDirectory(options.OutputDirectory);
 
+        progress.Step("Writing schema files");
         var writeResult = await _schemaFileWriter.WriteAsync(options.OutputDirectory, model, options.Format, cancellationToken);
 
+        progress.Step("Building deployment plan");
         var deploymentPlan = _deploymentPlanBuilder.Build(model, writeResult);
 
+        progress.Step("Writing deploy script");
         await _deployScriptWriter.WriteAsync(options.OutputDirectory, deploymentPlan.OrderedFiles, cancellationToken);
 
         await _dependencyManifestWriter.WriteAsync(options.OutputDirectory, deploymentPlan, cancellationToken);
 
         await _readmeWriter.WriteAsync(options.OutputDirectory, cancellationToken);
 
+        progress.Complete("Export finished");
         return new ExportSummary
         {
             DryRun = false,

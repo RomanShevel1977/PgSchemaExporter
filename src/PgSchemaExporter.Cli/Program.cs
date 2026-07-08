@@ -1,11 +1,16 @@
+using Microsoft.Extensions.Logging;
+using PgSchemaExporter.Cli.Diagnostics;
 using PgSchemaExporter.Core;
 using PgSchemaExporter.Core.Configuration;
+using PgSchemaExporter.Core.Diagnostics;
 using PgSchemaExporter.Core.Diff;
 using PgSchemaExporter.Core.Metadata;
 using PgSchemaExporter.Core.Migration;
 using PgSchemaExporter.Core.Options;
 using PgSchemaExporter.Core.Output;
 using PgSchemaExporter.Core.Scripting;
+
+const string VersionString = "1.5.0";
 
 if (args.Length == 0 || args.Contains("--help") || args.Contains("-h"))
 {
@@ -15,9 +20,16 @@ if (args.Length == 0 || args.Contains("--help") || args.Contains("-h"))
 
 if (args.Contains("--version") || args.Contains("-v"))
 {
-    Console.WriteLine("pgschema-export 1.4.0");
+    Console.WriteLine($"pgschema-export {VersionString}");
     return;
 }
+
+// Extract global verbosity flags before command-specific parsing.
+var verbosity = ResolveVerbosity(args);
+args = args.Where(a => a is not "--verbose" and not "--quiet").ToArray();
+
+IProgressReporter progress = new ConsoleProgressReporter(verbosity);
+ILogger logger = new ConsoleLogger(verbosity);
 
 try
 {
@@ -33,7 +45,7 @@ try
             new DeployScriptWriter(),
             new ReadmeWriter());
 
-        var summary = await exporter.ExportAsync(options);
+        var summary = await exporter.ExportAsync(options, progress, logger);
 
         if (summary.DryRun)
         {
@@ -63,7 +75,7 @@ try
         if (!string.IsNullOrWhiteSpace(options.LeftConnectionString) ||
             !string.IsNullOrWhiteSpace(options.RightConnectionString))
         {
-            result = await differ.DiffAsync(options);
+            result = await differ.DiffAsync(options, progress, logger);
         }
         else
         {
@@ -193,12 +205,21 @@ try
     PrintHelp();
     Environment.ExitCode = 1;
 }
+catch (OperationCanceledException)
+{
+    Console.Error.WriteLine("Operation cancelled.");
+    Environment.ExitCode = 1;
+}
 catch (Exception ex)
 {
+    var (message, suggestion) = FriendlyError.Describe(ex);
+    logger.LogError(ex, "Operation failed");
+
     Console.Error.WriteLine("Operation failed:");
-    Console.Error.WriteLine(ex.Message);
-    if (ex.InnerException is not null)
-        Console.Error.WriteLine($"Inner error: {ex.InnerException.Message}");
+    Console.Error.WriteLine($"  {message}");
+    if (!string.IsNullOrEmpty(suggestion))
+        Console.Error.WriteLine($"  Suggestion: {suggestion}");
+
     Environment.ExitCode = 1;
 }
 
@@ -531,10 +552,19 @@ static string[] Split(string value)
     return value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 }
 
+static Verbosity ResolveVerbosity(string[] args)
+{
+    // --quiet wins over --verbose if both are supplied.
+    if (args.Contains("--quiet"))
+        return Verbosity.Quiet;
+
+    return args.Contains("--verbose") ? Verbosity.Verbose : Verbosity.Normal;
+}
+
 static void PrintHelp()
 {
     Console.WriteLine("""
-PostgreSQL Git-Native Schema Exporter 1.4.0
+PostgreSQL Git-Native Schema Exporter 1.5.0
 
 Usage:
   pgschema-export init [--output "./pgschema-export.json"]
@@ -551,6 +581,12 @@ Commands:
   diff         Compare two exported schema directories and report changes
   watch        Continuously re-run a directory diff as files change
   migrate      Generate up/down migration scripts between two exported schemas
+
+Global options:
+      --verbose          Print detailed per-object progress and debug logs (to stderr)
+      --quiet            Suppress progress output; only errors are shown
+      --version, -v      Show the installed version
+      --help, -h         Show this help
 
 Init options:
   -o, --output           Path for the config file. Default: pgschema-export.json

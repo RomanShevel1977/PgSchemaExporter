@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using PgSchemaExporter.Core.Diagnostics;
 using PgSchemaExporter.Core.Metadata;
 using PgSchemaExporter.Core.Options;
 using PgSchemaExporter.Core.Output;
@@ -14,13 +16,15 @@ public sealed class LiveSchemaExporter
     public async Task<string> ExportToTempDirectoryAsync(
         string connectionString,
         ExportOptions exportOptions,
+        IProgressReporter? progress = null,
+        ILogger? logger = null,
         CancellationToken cancellationToken = default)
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "pgschema-diff-" + Guid.NewGuid().ToString("n"));
         Directory.CreateDirectory(tempDir);
 
         var provider = new PostgresMetadataProvider();
-        var model = await provider.LoadAsync(connectionString, exportOptions, cancellationToken);
+        var model = await provider.LoadAsync(connectionString, exportOptions, progress, logger, cancellationToken);
 
         var writer = new SchemaFileWriter();
         await writer.WriteAsync(tempDir, model, exportOptions.Format, cancellationToken);

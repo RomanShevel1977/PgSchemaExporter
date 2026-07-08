@@ -1,4 +1,6 @@
+using Microsoft.Extensions.Logging;
 using PgSchemaExporter.Core;
+using PgSchemaExporter.Core.Diagnostics;
 using PgSchemaExporter.Core.Metadata;
 using PgSchemaExporter.Core.Models;
 using PgSchemaExporter.Core.Options;
@@ -18,7 +20,7 @@ public class DryRunExportTests : IDisposable
 
     private sealed class StubMetadataProvider : IMetadataProvider
     {
-        public Task<DatabaseModel> LoadAsync(string connectionString, ExportOptions options, CancellationToken cancellationToken = default)
+        public Task<DatabaseModel> LoadAsync(string connectionString, ExportOptions options, IProgressReporter? progress = null, ILogger? logger = null, CancellationToken cancellationToken = default)
             => Task.FromResult(new DatabaseModel
             {
                 Tables = [new DbTable { Schema = "public", Name = "users" }],
