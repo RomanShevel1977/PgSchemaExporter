@@ -58,7 +58,7 @@ public sealed class SchemaDiffer
             }
 
             progress.Step("Comparing schemas");
-            return DiffDirectories(leftDir, rightDir);
+            return DiffDirectories(leftDir, rightDir, options);
         }
         finally
         {
@@ -78,10 +78,10 @@ public sealed class SchemaDiffer
             !string.IsNullOrWhiteSpace(options.RightConnectionString))
             throw new InvalidOperationException("Use DiffAsync for live database comparisons.");
 
-        return DiffDirectories(options.LeftDirectory, options.RightDirectory);
+        return DiffDirectories(options.LeftDirectory, options.RightDirectory, options);
     }
 
-    private static SchemaDiffResult DiffDirectories(string leftDir, string rightDir)
+    private static SchemaDiffResult DiffDirectories(string leftDir, string rightDir, SchemaDiffOptions options)
     {
         var left = Enumerate(leftDir);
         var right = Enumerate(rightDir);
@@ -90,6 +90,7 @@ public sealed class SchemaDiffer
         var removed = new List<string>();
         var changed = new List<string>();
         var unchanged = new List<string>();
+        var fileDiffs = new List<FileDiff>();
 
         foreach (var (relativePath, rightFullPath) in right)
         {
@@ -99,10 +100,23 @@ public sealed class SchemaDiffer
                 continue;
             }
 
-            if (ReadNormalized(leftFullPath) == ReadNormalized(rightFullPath))
+            var leftLines = NormalizedLines(leftFullPath, options);
+            var rightLines = NormalizedLines(rightFullPath, options);
+
+            if (leftLines.SequenceEqual(rightLines))
+            {
                 unchanged.Add(relativePath);
+            }
             else
+            {
                 changed.Add(relativePath);
+                if (options.ShowContext)
+                    fileDiffs.Add(new FileDiff
+                    {
+                        Path = relativePath,
+                        Lines = LineDiffer.Diff(leftLines, rightLines)
+                    });
+            }
         }
 
         foreach (var relativePath in left.Keys)
@@ -116,16 +130,63 @@ public sealed class SchemaDiffer
             Added = Sorted(added),
             Removed = Sorted(removed),
             Changed = Sorted(changed),
-            Unchanged = Sorted(unchanged)
+            Unchanged = Sorted(unchanged),
+            Statistics = BuildStatistics(added, removed, changed),
+            FileDiffs = fileDiffs.OrderBy(x => x.Path, StringComparer.OrdinalIgnoreCase).ToList()
         };
+    }
+
+    private static IReadOnlyList<DiffTypeStat> BuildStatistics(
+        List<string> added,
+        List<string> removed,
+        List<string> changed)
+    {
+        var types = new SortedDictionary<string, (int Added, int Removed, int Changed)>(StringComparer.OrdinalIgnoreCase);
+
+        void Tally(IEnumerable<string> paths, char kind)
+        {
+            foreach (var path in paths)
+            {
+                var type = ObjectType(path);
+                types.TryGetValue(type, out var counts);
+                counts = kind switch
+                {
+                    'a' => (counts.Added + 1, counts.Removed, counts.Changed),
+                    'r' => (counts.Added, counts.Removed + 1, counts.Changed),
+                    _ => (counts.Added, counts.Removed, counts.Changed + 1)
+                };
+                types[type] = counts;
+            }
+        }
+
+        Tally(added, 'a');
+        Tally(removed, 'r');
+        Tally(changed, 'c');
+
+        return types
+            .Select(kv => new DiffTypeStat
+            {
+                ObjectType = kv.Key,
+                Added = kv.Value.Added,
+                Removed = kv.Value.Removed,
+                Changed = kv.Value.Changed
+            })
+            .ToList();
+    }
+
+    private static string ObjectType(string relativePath)
+    {
+        var index = relativePath.IndexOf('/');
+        return index > 0 ? relativePath[..index] : "(root)";
     }
 
     private static ExportOptions BuildExportOptions(SchemaDiffOptions diffOptions)
     {
         return new ExportOptions
         {
-            Schemas = ["public"],
-            ExcludeSchemas = ["pg_catalog", "information_schema"],
+            Schemas = diffOptions.Schemas is { Length: > 0 } ? diffOptions.Schemas : ["public"],
+            ExcludeSchemas = diffOptions.ExcludeSchemas ?? ["pg_catalog", "information_schema"],
+            Parallel = diffOptions.Parallel,
             Include = new IncludeOptions
             {
                 Schemas = true,
@@ -173,10 +234,86 @@ public sealed class SchemaDiffer
         return map;
     }
 
-    private static string ReadNormalized(string path)
+    /// <summary>
+    /// Reads a file and returns its lines after applying the requested
+    /// normalization: line endings are always unified, and comments/whitespace
+    /// are optionally stripped so cosmetic edits don't register as changes.
+    /// </summary>
+    private static string[] NormalizedLines(string path, SchemaDiffOptions options)
     {
-        var text = File.ReadAllText(path);
-        return text.Replace("\r\n", "\n").Replace('\r', '\n').TrimEnd('\n');
+        var text = File.ReadAllText(path)
+            .Replace("\r\n", "\n")
+            .Replace('\r', '\n')
+            .TrimEnd('\n');
+
+        var lines = text.Split('\n');
+        var result = new List<string>(lines.Length);
+
+        foreach (var raw in lines)
+        {
+            var line = raw;
+
+            if (options.IgnoreComments)
+                line = StripComment(line);
+
+            if (options.IgnoreWhitespace)
+            {
+                line = CollapseWhitespace(line);
+                if (line.Length == 0)
+                    continue;
+            }
+            else if (options.IgnoreComments && line.Length == 0 && raw.TrimStart().StartsWith("--", StringComparison.Ordinal))
+            {
+                // Drop lines that became empty solely because they were whole-line comments.
+                continue;
+            }
+
+            result.Add(line);
+        }
+
+        return result.ToArray();
+    }
+
+    /// <summary>
+    /// Best-effort removal of a trailing <c>--</c> line comment. Ignores <c>--</c>
+    /// occurrences inside single-quoted string literals.
+    /// </summary>
+    private static string StripComment(string line)
+    {
+        var inString = false;
+        for (var i = 0; i < line.Length - 1; i++)
+        {
+            var c = line[i];
+            if (c == '\'')
+                inString = !inString;
+            else if (!inString && c == '-' && line[i + 1] == '-')
+                return line[..i].TrimEnd();
+        }
+
+        return line;
+    }
+
+    private static string CollapseWhitespace(string line)
+    {
+        var sb = new System.Text.StringBuilder(line.Length);
+        var lastWasSpace = false;
+
+        foreach (var c in line)
+        {
+            if (char.IsWhiteSpace(c))
+            {
+                lastWasSpace = true;
+                continue;
+            }
+
+            if (lastWasSpace && sb.Length > 0)
+                sb.Append(' ');
+
+            sb.Append(c);
+            lastWasSpace = false;
+        }
+
+        return sb.ToString();
     }
 
     private static IReadOnlyList<string> Sorted(List<string> items)

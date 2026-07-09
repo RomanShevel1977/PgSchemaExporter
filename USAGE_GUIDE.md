@@ -415,8 +415,22 @@ pgschema-export diff --left "<baseline>" --right "<target>" [options]
 | `--right-db` | | Target live PostgreSQL connection string | - |
 | `--output` | `-o` | Optional path to write diff report | - |
 | `--format` | | Output format: text, json, or html | text |
+| `--schemas` | | Comma-separated schemas to export for live-db diff | public |
+| `--exclude-schemas` | | Comma-separated schemas to exclude for live-db diff | pg_catalog, information_schema |
+| `--parallel` | | Run live-db metadata queries concurrently | off |
+| `--ignore-comments` | | Ignore SQL comments when comparing files | off |
+| `--ignore-whitespace` | | Ignore whitespace-only differences | off |
+| `--context` | | Show line-by-line changes within each changed file | off |
 
 *At least one of `--left`/`--left-db` and `--right`/`--right-db` must be specified.
+
+#### Statistics and Context
+
+Every diff report includes a **Changes by type** summary that groups add/remove/change counts by object type (the top-level export folder, e.g. `tables`, `views`, `functions`). Pass `--context` to also emit git-style line-by-line changes for each changed file. In JSON output these appear as the additive `statistics` and `fileDiffs` arrays.
+
+```bash
+pgschema-export diff -l "./db-schema-v1" -r "./db-schema-v2" --context --ignore-whitespace
+```
 
 #### Format Auto-Detection
 
@@ -1106,6 +1120,13 @@ pgschema-export watch \
 
 ## Version History
 
+### 1.6.0
+- Added `--schemas`/`--exclude-schemas` for customizable live-database diff
+- Added `--parallel` support for live-database diff
+- Added `--ignore-comments` and `--ignore-whitespace` diff options
+- Added `--context` for line-by-line changes within changed files
+- Added per-object-type diff summary statistics (text/JSON/HTML)
+
 ### 1.5.0
 - Added `--verbose` and `--quiet` global flags
 - Added progress reporting for export and live-database diff
@@ -1140,6 +1161,6 @@ pgschema-export watch \
 ## Additional Resources
 
 - **README.md**: Project overview and quick start
-- **RELEASE_NOTES_1.5.0.md**: Detailed release notes for current version
+- **RELEASE_NOTES_1.6.0.md**: Detailed release notes for current version
 - **PostgreSQL Documentation**: https://www.postgresql.org/docs/
 - **Npgsql Documentation**: https://www.npgsql.org/doc/

@@ -23,5 +23,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PgSchemaExporter.Core\PgSchemaExporter.Core.csproj" />
+    <ProjectReference Include="..\..\src\PgSchemaExporter.Cli\PgSchemaExporter.Cli.csproj" />
   </ItemGroup>
 </Project>

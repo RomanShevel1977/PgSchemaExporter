@@ -36,9 +36,38 @@ public sealed class SchemaDiffReportWriter
         sb.AppendLine($"- Unchanged: {result.Unchanged.Count}");
         sb.AppendLine();
 
+        if (result.Statistics.Count > 0)
+        {
+            sb.AppendLine("## Changes by type");
+            foreach (var stat in result.Statistics)
+                sb.AppendLine($"- {stat.ObjectType}: +{stat.Added} -{stat.Removed} ~{stat.Changed}");
+            sb.AppendLine();
+        }
+
         AppendSection(sb, "Added", result.Added, "+");
         AppendSection(sb, "Removed", result.Removed, "-");
         AppendSection(sb, "Changed", result.Changed, "~");
+
+        if (result.FileDiffs.Count > 0)
+        {
+            sb.AppendLine("## Details");
+            sb.AppendLine();
+            foreach (var file in result.FileDiffs)
+            {
+                sb.AppendLine($"### {file.Path}");
+                foreach (var line in file.Lines)
+                {
+                    var marker = line.Kind switch
+                    {
+                        DiffLineKind.Added => "+",
+                        DiffLineKind.Removed => "-",
+                        _ => " "
+                    };
+                    sb.AppendLine($"{marker} {line.Text}");
+                }
+                sb.AppendLine();
+            }
+        }
 
         if (!result.HasDifferences)
             sb.AppendLine("No differences detected.");
@@ -54,7 +83,24 @@ public sealed class SchemaDiffReportWriter
             removed = result.Removed,
             changed = result.Changed,
             unchanged = result.Unchanged,
-            hasDifferences = result.HasDifferences
+            hasDifferences = result.HasDifferences,
+            statistics = result.Statistics.Select(s => new
+            {
+                objectType = s.ObjectType,
+                added = s.Added,
+                removed = s.Removed,
+                changed = s.Changed,
+                total = s.Total
+            }),
+            fileDiffs = result.FileDiffs.Select(f => new
+            {
+                path = f.Path,
+                lines = f.Lines.Select(l => new
+                {
+                    kind = l.Kind.ToString().ToLowerInvariant(),
+                    text = l.Text
+                })
+            })
         };
 
         return JsonSerializer.Serialize(json, new JsonSerializerOptions
@@ -115,9 +161,45 @@ public sealed class SchemaDiffReportWriter
         sb.AppendLine($"<span class=\"pill\">Unchanged <b>{result.Unchanged.Count}</b></span>");
         sb.AppendLine("</div>");
 
+        if (result.Statistics.Count > 0)
+        {
+            sb.AppendLine("<section>");
+            sb.AppendLine("<h2>Changes by type</h2>");
+            sb.AppendLine("<ul>");
+            foreach (var stat in result.Statistics)
+                sb.AppendLine($"<li>{HtmlEncode(stat.ObjectType)}: <span class=\"marker added\">+{stat.Added}</span> <span class=\"marker removed\">-{stat.Removed}</span> <span class=\"marker changed\">~{stat.Changed}</span></li>");
+            sb.AppendLine("</ul>");
+            sb.AppendLine("</section>");
+        }
+
         AppendHtmlSection(sb, "Added", result.Added, "added", "+");
         AppendHtmlSection(sb, "Removed", result.Removed, "removed", "-");
         AppendHtmlSection(sb, "Changed", result.Changed, "changed", "~");
+
+        foreach (var file in result.FileDiffs)
+        {
+            sb.AppendLine("<section>");
+            sb.AppendLine($"<h2>{HtmlEncode(file.Path)}</h2>");
+            sb.AppendLine("<ul>");
+            foreach (var line in file.Lines)
+            {
+                var cssClass = line.Kind switch
+                {
+                    DiffLineKind.Added => "added",
+                    DiffLineKind.Removed => "removed",
+                    _ => ""
+                };
+                var marker = line.Kind switch
+                {
+                    DiffLineKind.Added => "+",
+                    DiffLineKind.Removed => "-",
+                    _ => " "
+                };
+                sb.AppendLine($"<li class=\"{cssClass}\"><span class=\"marker {cssClass}\">{marker}</span>{HtmlEncode(line.Text)}</li>");
+            }
+            sb.AppendLine("</ul>");
+            sb.AppendLine("</section>");
+        }
 
         if (!result.HasDifferences)
             sb.AppendLine("<p class=\"none\">No differences detected.</p>");

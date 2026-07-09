@@ -9,6 +9,24 @@ public sealed class SchemaDiffOptions
     public string? OutputFile { get; set; }
     public DiffFormat Format { get; set; } = DiffFormat.Text;
 
+    /// <summary>Schemas to include when exporting live databases for comparison.</summary>
+    public string[] Schemas { get; set; } = ["public"];
+
+    /// <summary>Schemas to exclude when exporting live databases for comparison.</summary>
+    public string[] ExcludeSchemas { get; set; } = ["pg_catalog", "information_schema"];
+
+    /// <summary>Run live-database metadata queries concurrently (faster on large databases).</summary>
+    public bool Parallel { get; set; }
+
+    /// <summary>Ignore SQL comments (whole-line and trailing <c>--</c> comments) when comparing files.</summary>
+    public bool IgnoreComments { get; set; }
+
+    /// <summary>Ignore whitespace-only differences (leading/trailing/collapsed whitespace, blank lines).</summary>
+    public bool IgnoreWhitespace { get; set; }
+
+    /// <summary>Emit line-by-line changes within each changed file (context-aware diff).</summary>
+    public bool ShowContext { get; set; }
+
     public void EnsureValid()
     {
         var hasLeftDir = !string.IsNullOrWhiteSpace(LeftDirectory);

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using PgSchemaExporter.Cli;
 using PgSchemaExporter.Cli.Diagnostics;
 using PgSchemaExporter.Core;
 using PgSchemaExporter.Core.Configuration;
@@ -10,7 +11,7 @@ using PgSchemaExporter.Core.Options;
 using PgSchemaExporter.Core.Output;
 using PgSchemaExporter.Core.Scripting;
 
-const string VersionString = "1.5.0";
+const string VersionString = "1.6.0";
 
 if (args.Length == 0 || args.Contains("--help") || args.Contains("-h"))
 {
@@ -409,75 +410,7 @@ static MigrationOptions ParseMigrateOptions(string[] args)
 
 static SchemaDiffOptions ParseDiffOptions(string[] args)
 {
-    var options = new SchemaDiffOptions();
-    var formatExplicit = false;
-
-    for (var i = 0; i < args.Length; i++)
-    {
-        var arg = args[i];
-
-        string NextValue()
-        {
-            if (i + 1 >= args.Length)
-                throw new ArgumentException($"Missing value for {arg}");
-
-            return args[++i];
-        }
-
-        switch (arg)
-        {
-            case "--left":
-            case "-l":
-                options.LeftDirectory = NextValue();
-                break;
-
-            case "--left-db":
-                options.LeftConnectionString = NextValue();
-                break;
-
-            case "--right":
-            case "-r":
-                options.RightDirectory = NextValue();
-                break;
-
-            case "--right-db":
-                options.RightConnectionString = NextValue();
-                break;
-
-            case "--output":
-            case "-o":
-                options.OutputFile = NextValue();
-                break;
-
-            case "--format":
-                var format = NextValue();
-                options.Format = format.ToLowerInvariant() switch
-                {
-                    "json" => DiffFormat.Json,
-                    "text" => DiffFormat.Text,
-                    "html" => DiffFormat.Html,
-                    _ => throw new ArgumentException($"Unknown format: {format}. Use 'text', 'json', or 'html'.")
-                };
-                formatExplicit = true;
-                break;
-
-            default:
-                throw new ArgumentException($"Unknown argument: {arg}");
-        }
-    }
-
-    // Infer HTML/JSON format from the output file extension when not set explicitly.
-    if (!formatExplicit && !string.IsNullOrWhiteSpace(options.OutputFile))
-    {
-        options.Format = Path.GetExtension(options.OutputFile).ToLowerInvariant() switch
-        {
-            ".html" or ".htm" => DiffFormat.Html,
-            ".json" => DiffFormat.Json,
-            _ => options.Format
-        };
-    }
-
-    return options;
+    return CliParser.ParseDiffOptions(args);
 }
 
 static (string Path, bool Force) ParseInitOptions(string[] args)
@@ -564,7 +497,7 @@ static Verbosity ResolveVerbosity(string[] args)
 static void PrintHelp()
 {
     Console.WriteLine("""
-PostgreSQL Git-Native Schema Exporter 1.5.0
+PostgreSQL Git-Native Schema Exporter 1.6.0
 
 Usage:
   pgschema-export init [--output "./pgschema-export.json"]
@@ -618,6 +551,12 @@ Diff options:
       --format           Output format: text (default), json, or html
                          Inferred from the --output extension (.json/.html) if omitted.
                          Exit code 2 indicates differences were found.
+      --schemas          Comma-separated schemas to export for live-db diff. Default: public
+      --exclude-schemas  Comma-separated schemas to exclude for live-db diff
+      --parallel         Run live-db metadata queries concurrently (faster on large databases)
+      --ignore-comments  Ignore SQL comments when comparing files
+      --ignore-whitespace Ignore whitespace-only differences when comparing files
+      --context          Show line-by-line changes within each changed file
 
 Watch options:
   -l, --left             Left (baseline) exported schema directory

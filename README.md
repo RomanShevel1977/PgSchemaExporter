@@ -218,29 +218,43 @@ fi
 * v1.4.0  Developer Experience — watch mode, `init` command, HTML diff report, parallel export ✅
 * v1.4.1  Bug fixes — watcher cancellation, temp-dir cleanup, subscription null-handling, schema normalization ✅
 * v1.5.0  Developer Experience Enhancements — structured logging, progress reporting, `--verbose`/`--quiet`, actionable errors, config validation ✅
+* v1.6.0  Advanced Diff Features — customizable/parallel live-db diff, `--ignore-comments`/`--ignore-whitespace`, context-aware line diffs, per-type statistics ✅
 
 What will be done in the next releases:
 
-### v1.6.0 - Advanced Diff Features
+### v1.7.0 - Safety & CI/CD
 **Features:**
-- Add customizable options for live database diff (schemas, format options)
-- Add parallel mode support for live database diff
-- Add `--ignore` patterns for diff (e.g., ignore comments, ignore whitespace changes)
-- Add context-aware diff (show line-by-line changes within files)
-- Add diff summary statistics (number of objects changed by type)
-
-### v1.7.0 - Performance and Scalability
-**Features:**
-- Add metadata query caching for repeated operations
-- Add incremental export (only export changed objects since last export)
-- Add export resume capability (resume interrupted exports)
-- Add concurrent file writing for large exports
-- Add memory-efficient streaming for very large databases
+- Drift detection (compare live DB vs exported schema)
+- Schema fingerprint validation (SHA256 for production safety)
+- Pre-flight validation (test migrations on temp DB)
+- GitHub Action template for CI/CD integration
+- Migration history tracking
 
 **Performance:**
-- Benchmark and optimize parallel query execution
-- Add connection pool configuration options
-- Add timeout configuration for database operations
+- Metadata query caching for repeated operations
+- Connection pool configuration options
+- Timeout configuration for database operations
+
+### v1.8.0 - Production Features (Planned)
+**Features:**
+- Declarative plan mode (Terraform-style plan-review-apply workflow)
+- Online DDL support (zero-downtime migrations, concurrent indexes)
+- Hazard warnings (destructive operation detection)
+- Lock timeout configuration
+- Schema documentation generation
+
+### v1.9.0 - Developer Experience (Planned)
+**Features:**
+- Schema visualization (ER diagrams)
+- Performance profiling
+- Improved error messages
+- Better progress reporting
+
+### v2.0.0 - Strategic Expansion (Planned)
+**Features:**
+- Multi-database support (MySQL, SQLite, SQL Server)
+- Cloud integration (AWS RDS, GCP Cloud SQL, Azure)
+- AI-assisted migration generation
 
 ---
 
@@ -255,7 +269,7 @@ What will be done in the next releases:
 
 ## Release Notes
 
-See [RELEASE_NOTES_1.5.0.md](RELEASE_NOTES_1.5.0.md) for the latest changes.
+See [RELEASE_NOTES_1.6.0.md](RELEASE_NOTES_1.6.0.md) for the latest changes.
 
 ## Feedback
 
