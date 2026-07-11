@@ -64,6 +64,130 @@ Now database changes look like normal code changes
 
 ---
 
+## Features
+
+### Core Capabilities
+
+**Export from PostgreSQL**
+- Export schema from live database to structured files
+- One file per database object (tables, views, functions, etc.)
+- Support for all common PostgreSQL objects
+- Parallel export for faster performance on large databases
+- Configurable object inclusion (domains, foreign tables, etc.)
+
+**Split Existing pg_dump**
+- Split monolithic pg_dump files into structured format
+- Convert existing schema dumps to Git-friendly structure
+- Preserve all schema information
+
+**Schema Diff**
+- Compare two schema directories
+- Compare directory to live database
+- Compare two live databases
+- Multiple output formats (text, JSON, HTML)
+- Per-type statistics (tables, views, functions, etc.)
+- Context-aware line diffs (see exact line changes)
+- Ignore comments and whitespace options
+- Parallel live database comparison
+
+**Migration Generation**
+- Generate up/down migration scripts between schema versions
+- Semantic diff (ALTER statements instead of drop/recreate)
+- Data preservation
+- Safe mode (comment out destructive SQL)
+- Preview mode (print without writing)
+
+**Watch Mode**
+- Monitor live database for schema changes
+- Auto-export on change detection
+- Real-time schema synchronization
+
+**Init Command**
+- Initialize configuration file
+- Quick setup for new projects
+- Config validation
+
+**HTML Diff Report**
+- Visual diff reports for stakeholders
+- Highlighted additions, removals, and context
+- Easy to share in pull requests
+
+### Advanced Features
+
+**Parallel Export**
+- Concurrent metadata queries
+- Faster export on large databases
+- Configurable parallelism
+
+**Live-to-Live Diff**
+- Compare two live databases directly
+- No intermediate export required
+- Useful for staging vs production comparison
+
+**Customizable Schema Selection**
+- Include/exclude specific schemas
+- Fine-grained control over comparison scope
+- Useful for multi-schema databases
+
+**Advanced Diff Options**
+- Ignore SQL comments (whole-line and trailing)
+- Ignore whitespace differences
+- Context-aware line diffs
+- Per-type change statistics
+
+**Structured Logging**
+- JSON logging for integration
+- Configurable log levels (verbose/quiet)
+- Actionable error messages
+
+**Progress Reporting**
+- Real-time progress updates
+- Time estimates
+- Cancellation support
+
+**Config Validation**
+- Validate configuration files
+- Clear error messages
+- Schema validation
+
+### CI/CD Integration
+
+**Exit Codes**
+- 0: Success (no differences)
+- 1: Error
+- 2: Differences detected
+
+**JSON Output**
+- Machine-readable diff output
+- Easy to parse in CI/CD pipelines
+- Structured change information
+
+**GitHub Action Ready**
+- Easy integration with GitHub Actions
+- Schema drift detection
+- Pull request comments
+
+### Supported Objects
+
+- Tables (including partitions)
+- Views (including materialized views)
+- Functions (including procedures and aggregates)
+- Indexes
+- Constraints (primary keys, foreign keys, unique, check)
+- Triggers
+- Policies (row-level security)
+- Types (composite, range, enum, domains)
+- Sequences
+- Foreign tables
+- Event triggers
+- Rules
+- Operators
+- Casts
+- Publications and subscriptions
+- Extensions
+
+---
+
 ## Install
 
 Download the latest binary:
