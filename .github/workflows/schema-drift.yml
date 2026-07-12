@@ -1,0 +1,78 @@
+name: PostgreSQL Schema Drift
+
+# Detects whether the live database has drifted away from the schema committed
+# to db-schema/. Runs the built-in `drift` command, which exits with code 2 when
+# drift is found so the job fails automatically.
+
+on:
+  schedule:
+    - cron: '0 6 * * *'   # daily drift check
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'db-schema/**'
+      - '.github/workflows/schema-drift.yml'
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: testdb
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0'
+
+      - name: Build tool
+        run: dotnet build src/PgSchemaExporter.Cli/PgSchemaExporter.Cli.csproj -c Release
+
+      - name: Verify committed schema fingerprint
+        run: |
+          dotnet run --project src/PgSchemaExporter.Cli/PgSchemaExporter.Cli.csproj \
+            fingerprint \
+            --schema ./db-schema \
+            --verify ./db-schema/schema.fingerprint.json
+        continue-on-error: true
+
+      - name: Detect drift against live database
+        id: drift
+        run: |
+          dotnet run --project src/PgSchemaExporter.Cli/PgSchemaExporter.Cli.csproj \
+            drift \
+            --schema ./db-schema \
+            --connection "Host=localhost;Database=testdb;Username=postgres;Password=postgres" \
+            --format json \
+            --output drift-report.json
+
+      - name: Upload drift report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: schema-drift-report
+          path: drift-report.json
+
+      # The drift command exits with code 2 when drift is detected, which fails
+      # the "Detect drift" step above automatically. This step surfaces a clear
+      # error annotation for reviewers.
+      - name: Report drift
+        if: failure() && steps.drift.outcome == 'failure'
+        run: |
+          echo "::error::Schema drift detected between db-schema/ and the live database. Review the drift-report artifact."

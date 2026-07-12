@@ -276,6 +276,46 @@ pgschema-export migrate --from ./old --to ./new --preview   # print, don't write
 pgschema-export migrate --from ./old --to ./new --safe      # comment out destructive SQL
 ```
 
+Every generated migration is recorded in `migrations/history.json` for an
+auditable trail of what was produced, when, and whether it was destructive.
+
+---
+
+### Detect schema drift
+
+Verify that a live database still matches the schema committed to Git. Drift is
+anything present in the live DB but not in the committed schema (or vice versa):
+
+```bash
+pgschema-export drift \
+  --schema "./db-schema" \
+  --connection "Host=localhost;Database=mydb;Username=postgres;Password=123" \
+  --format json \
+  --output drift-report.json
+```
+
+Exit code `2` signals drift was detected, which makes it easy to fail a CI job.
+See [.github/workflows/schema-drift.yml](.github/workflows/schema-drift.yml) for
+a ready-to-use scheduled drift check.
+
+---
+
+### Fingerprint a schema
+
+Generate a deterministic SHA256 fingerprint of an exported schema directory. Use
+it to validate that a schema has not changed unexpectedly:
+
+```bash
+# Generate and store a fingerprint
+pgschema-export fingerprint --schema "./db-schema" --output ./db-schema/schema.fingerprint.json
+
+# Later, verify the schema still matches (exit code 2 on mismatch)
+pgschema-export fingerprint --schema "./db-schema" --verify ./db-schema/schema.fingerprint.json
+```
+
+The fingerprint normalizes line endings, so it is stable across platforms and
+independent of file ordering.
+
 ---
 
 ## Why not just pg_dump?
@@ -343,21 +383,9 @@ fi
 * v1.4.1  Bug fixes — watcher cancellation, temp-dir cleanup, subscription null-handling, schema normalization ✅
 * v1.5.0  Developer Experience Enhancements — structured logging, progress reporting, `--verbose`/`--quiet`, actionable errors, config validation ✅
 * v1.6.0  Advanced Diff Features — customizable/parallel live-db diff, `--ignore-comments`/`--ignore-whitespace`, context-aware line diffs, per-type statistics ✅
+* v1.7.0  Safety & CI/CD — drift detection, schema fingerprint validation, migration history tracking, GitHub Action drift workflow ✅
 
 What will be done in the next releases:
-
-### v1.7.0 - Safety & CI/CD
-**Features:**
-- Drift detection (compare live DB vs exported schema)
-- Schema fingerprint validation (SHA256 for production safety)
-- Pre-flight validation (test migrations on temp DB)
-- GitHub Action template for CI/CD integration
-- Migration history tracking
-
-**Performance:**
-- Metadata query caching for repeated operations
-- Connection pool configuration options
-- Timeout configuration for database operations
 
 ### v1.8.0 - Production Features (Planned)
 **Features:**
@@ -393,7 +421,7 @@ What will be done in the next releases:
 
 ## Release Notes
 
-See [RELEASE_NOTES_1.6.0.md](RELEASE_NOTES_1.6.0.md) for the latest changes.
+See [RELEASE_NOTES_1.7.0.md](RELEASE_NOTES_1.7.0.md) for the latest changes.
 
 ## Feedback
 

@@ -5,13 +5,15 @@ using PgSchemaExporter.Core;
 using PgSchemaExporter.Core.Configuration;
 using PgSchemaExporter.Core.Diagnostics;
 using PgSchemaExporter.Core.Diff;
+using PgSchemaExporter.Core.Drift;
+using PgSchemaExporter.Core.Integrity;
 using PgSchemaExporter.Core.Metadata;
 using PgSchemaExporter.Core.Migration;
 using PgSchemaExporter.Core.Options;
 using PgSchemaExporter.Core.Output;
 using PgSchemaExporter.Core.Scripting;
 
-const string VersionString = "1.6.0";
+const string VersionString = "1.7.0";
 
 if (args.Length == 0 || args.Contains("--help") || args.Contains("-h"))
 {
@@ -118,11 +120,25 @@ try
         else
         {
             var writer = new MigrationWriter();
-            var result = await writer.WriteAsync(options, script, DateTimeOffset.UtcNow);
+            var timestamp = DateTimeOffset.UtcNow;
+            var result = await writer.WriteAsync(options, script, timestamp);
+
+            await MigrationHistory.AppendAsync(options.OutputDirectory, new MigrationHistoryEntry
+            {
+                AppliedAt = timestamp,
+                Name = options.Name,
+                UpFile = Path.GetFileName(result.UpFile),
+                DownFile = Path.GetFileName(result.DownFile),
+                UpStatements = script.Up.Count,
+                DownStatements = script.Down.Count,
+                Destructive = script.HasDestructiveChanges
+            });
+
             Console.WriteLine("Migration generated.");
             Console.WriteLine($"Up:   {Path.GetFullPath(result.UpFile)}");
             Console.WriteLine($"Down: {Path.GetFullPath(result.DownFile)}");
             Console.WriteLine($"Statements: {script.Up.Count} up / {script.Down.Count} down");
+            Console.WriteLine($"History: {Path.GetFullPath(Path.Combine(options.OutputDirectory, MigrationHistory.DefaultFileName))}");
         }
 
         if (script.HasDestructiveChanges)
@@ -199,6 +215,75 @@ try
         }
 
         Console.WriteLine("Watch stopped.");
+        return;
+    }
+
+    if (string.Equals(command, "drift", StringComparison.OrdinalIgnoreCase))
+    {
+        var options = ParseDriftOptions(args.Skip(1).ToArray());
+
+        var detector = new DriftDetector();
+        var result = await detector.DetectAsync(options, progress, logger);
+
+        var reportWriter = new SchemaDiffReportWriter();
+        Console.WriteLine(reportWriter.BuildReport(result.Diff, options.Format));
+
+        if (result.HasDrifted)
+        {
+            Console.WriteLine("Drift detected between the committed schema and the live database:");
+            Console.WriteLine($"  Missing from live DB:   {result.Missing.Count}");
+            Console.WriteLine($"  Unexpected in live DB:  {result.Unexpected.Count}");
+            Console.WriteLine($"  Modified definitions:   {result.Modified.Count}");
+        }
+        else
+        {
+            Console.WriteLine("No drift detected. The live database matches the committed schema.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.OutputFile))
+        {
+            await reportWriter.WriteAsync(options.OutputFile, result.Diff, options.Format);
+            Console.WriteLine($"Report written to: {Path.GetFullPath(options.OutputFile)}");
+        }
+
+        Environment.ExitCode = result.HasDrifted ? 2 : 0;
+        return;
+    }
+
+    if (string.Equals(command, "fingerprint", StringComparison.OrdinalIgnoreCase))
+    {
+        var (schema, output, verify) = ParseFingerprintOptions(args.Skip(1).ToArray());
+
+        var result = SchemaFingerprint.Compute(schema);
+
+        if (!string.IsNullOrWhiteSpace(verify))
+        {
+            var expected = await SchemaFingerprintFile.ReadAsync(verify);
+            if (string.Equals(expected.Fingerprint, result.Fingerprint, StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("Fingerprint OK. The schema matches the stored fingerprint.");
+                Console.WriteLine($"  Fingerprint: {result.Fingerprint}");
+                Environment.ExitCode = 0;
+            }
+            else
+            {
+                Console.Error.WriteLine("Fingerprint MISMATCH. The schema has changed since the fingerprint was generated.");
+                Console.Error.WriteLine($"  Expected: {expected.Fingerprint}");
+                Console.Error.WriteLine($"  Actual:   {result.Fingerprint}");
+                Environment.ExitCode = 2;
+            }
+            return;
+        }
+
+        Console.WriteLine($"Fingerprint: {result.Fingerprint}");
+        Console.WriteLine($"Files:       {result.FileCount}");
+
+        if (!string.IsNullOrWhiteSpace(output))
+        {
+            await SchemaFingerprintFile.WriteAsync(output, result);
+            Console.WriteLine($"Written to: {Path.GetFullPath(output)}");
+        }
+
         return;
     }
 
@@ -413,6 +498,16 @@ static SchemaDiffOptions ParseDiffOptions(string[] args)
     return CliParser.ParseDiffOptions(args);
 }
 
+static DriftOptions ParseDriftOptions(string[] args)
+{
+    return CliParser.ParseDriftOptions(args);
+}
+
+static (string Schema, string? Output, string? Verify) ParseFingerprintOptions(string[] args)
+{
+    return CliParser.ParseFingerprintOptions(args);
+}
+
 static (string Path, bool Force) ParseInitOptions(string[] args)
 {
     var path = ExportConfigWriter.DefaultFileName;
@@ -497,7 +592,7 @@ static Verbosity ResolveVerbosity(string[] args)
 static void PrintHelp()
 {
     Console.WriteLine("""
-PostgreSQL Git-Native Schema Exporter 1.6.0
+PostgreSQL Git-Native Schema Exporter 1.7.0
 
 Usage:
   pgschema-export init [--output "./pgschema-export.json"]
@@ -506,6 +601,8 @@ Usage:
   pgschema-export diff --left "./old-schema" --right "./new-schema"
   pgschema-export watch --left "./old-schema" --right "./new-schema"
   pgschema-export migrate --from "./old-schema" --to "./new-schema" --output "./migrations"
+  pgschema-export drift --schema "./db-schema" --connection "<connection-string>"
+  pgschema-export fingerprint --schema "./db-schema" [--output schema.fingerprint.json]
 
 Commands:
   init         Create a pgschema-export.json config template
@@ -514,6 +611,8 @@ Commands:
   diff         Compare two exported schema directories and report changes
   watch        Continuously re-run a directory diff as files change
   migrate      Generate up/down migration scripts between two exported schemas
+  drift        Detect drift between a committed schema directory and a live DB
+  fingerprint  Compute (or verify) a SHA256 fingerprint of a schema directory
 
 Global options:
       --verbose          Print detailed per-object progress and debug logs (to stderr)
@@ -570,6 +669,27 @@ Migrate options:
   -n, --name             Optional name appended to the generated file names
       --safe             Emit destructive statements (DROP, type changes) as comments
       --preview          Print the migration to stdout without writing files
+                         A history.json record is appended to the output directory.
+
+Drift options:
+  -s, --schema           Committed exported schema directory (expected state)
+  -c, --connection       Live PostgreSQL connection string (actual state)
+  -o, --output           Optional path to write the drift report
+      --format           Output format: text (default), json, or html
+                         Inferred from the --output extension (.json/.html) if omitted.
+                         Exit code 2 indicates drift was detected.
+      --schemas          Comma-separated schemas to export from the live DB. Default: public
+      --exclude-schemas  Comma-separated schemas to exclude
+      --parallel         Run live-db metadata queries concurrently
+      --ignore-comments  Ignore SQL comments when comparing
+      --ignore-whitespace Ignore whitespace-only differences when comparing
+      --context          Show line-by-line changes within each drifted file
+
+Fingerprint options:
+  -s, --schema           Exported schema directory to fingerprint
+  -o, --output           Optional path to write the fingerprint manifest (JSON)
+      --verify           Path to a fingerprint manifest to validate against.
+                         Exit code 2 indicates the schema no longer matches.
 
 Split-dump options:
   -i, --input            Input SQL file created by pg_dump
