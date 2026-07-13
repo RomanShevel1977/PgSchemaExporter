@@ -9,182 +9,45 @@ Git-native PostgreSQL schema exporter and `pg_dump` splitter.
 
 ---
 
-## Why this exists
+## Why
 
-If you've ever tried to use `pg_dump` with Git, you know the pain:
-
-### ❌ pg_dump
-
-* 50k+ lines SQL files
-* impossible to review changes
-* huge diffs for tiny updates
-* no structure
-
----
-
-## This tool fixes that
-
-### ✅ PgSchemaExporter
-
-* one file per object
-* clean Git diffs
-* readable SQL
-* structured folders
-
----
-
-## What you get
-
-Instead of this:
-
-```text
-schema.sql (50,000 lines)
-```
-
-You get:
+`pg_dump` produces one giant SQL file — 50k+ lines, huge diffs for tiny changes,
+impossible to review. PgSchemaExporter writes **one file per database object** in a
+structured folder tree, so schema changes look like normal code changes:
 
 ```text
 db-schema/
-├── tables/
-│   └── public.users.sql
+├── tables/public.users.sql
 ├── indexes/
 ├── constraints/
 ├── views/
 ├── functions/
 ├── types/
 ├── sequences/
-├── domains/
-├── foreign_tables/
 ├── triggers/
 ├── policies/
-└── deploy.sql
+└── deploy.sql          # dependency-ordered deployment script
 ```
-
-Now database changes look like normal code changes
 
 ---
 
 ## Features
 
-### Core Capabilities
+- **Export** — dump a live database to structured per-object files; parallel, with configurable object inclusion.
+- **Split** — convert an existing monolithic `pg_dump` into the same Git-friendly layout.
+- **Diff** — compare directory↔directory, directory↔live, or live↔live; text/JSON/HTML output, per-type stats, context-aware line diffs, ignore comments/whitespace.
+- **Migrate** — generate `up`/`down` scripts with data-preserving semantic `ALTER`s; safe and preview modes; history tracking.
+- **Plan / Apply** — Terraform-style reviewable plan, then apply (or roll back) against a live database.
+- **Production-safe** — online DDL (`CONCURRENTLY`), lock/statement timeouts, hazard analysis of destructive operations.
+- **Drift & Fingerprint** — detect out-of-band changes vs the committed schema; deterministic SHA256 validation.
+- **Watch** — auto-re-diff/export as the schema changes.
+- **CI/CD** — machine-readable JSON, meaningful exit codes, ready-to-use GitHub Action.
+- **DX** — `init` config scaffolding + validation, structured logging, `--verbose`/`--quiet`, progress reporting.
 
-**Export from PostgreSQL**
-- Export schema from live database to structured files
-- One file per database object (tables, views, functions, etc.)
-- Support for all common PostgreSQL objects
-- Parallel export for faster performance on large databases
-- Configurable object inclusion (domains, foreign tables, etc.)
-
-**Split Existing pg_dump**
-- Split monolithic pg_dump files into structured format
-- Convert existing schema dumps to Git-friendly structure
-- Preserve all schema information
-
-**Schema Diff**
-- Compare two schema directories
-- Compare directory to live database
-- Compare two live databases
-- Multiple output formats (text, JSON, HTML)
-- Per-type statistics (tables, views, functions, etc.)
-- Context-aware line diffs (see exact line changes)
-- Ignore comments and whitespace options
-- Parallel live database comparison
-
-**Migration Generation**
-- Generate up/down migration scripts between schema versions
-- Semantic diff (ALTER statements instead of drop/recreate)
-- Data preservation
-- Safe mode (comment out destructive SQL)
-- Preview mode (print without writing)
-
-**Watch Mode**
-- Monitor live database for schema changes
-- Auto-export on change detection
-- Real-time schema synchronization
-
-**Init Command**
-- Initialize configuration file
-- Quick setup for new projects
-- Config validation
-
-**HTML Diff Report**
-- Visual diff reports for stakeholders
-- Highlighted additions, removals, and context
-- Easy to share in pull requests
-
-### Advanced Features
-
-**Parallel Export**
-- Concurrent metadata queries
-- Faster export on large databases
-- Configurable parallelism
-
-**Live-to-Live Diff**
-- Compare two live databases directly
-- No intermediate export required
-- Useful for staging vs production comparison
-
-**Customizable Schema Selection**
-- Include/exclude specific schemas
-- Fine-grained control over comparison scope
-- Useful for multi-schema databases
-
-**Advanced Diff Options**
-- Ignore SQL comments (whole-line and trailing)
-- Ignore whitespace differences
-- Context-aware line diffs
-- Per-type change statistics
-
-**Structured Logging**
-- JSON logging for integration
-- Configurable log levels (verbose/quiet)
-- Actionable error messages
-
-**Progress Reporting**
-- Real-time progress updates
-- Time estimates
-- Cancellation support
-
-**Config Validation**
-- Validate configuration files
-- Clear error messages
-- Schema validation
-
-### CI/CD Integration
-
-**Exit Codes**
-- 0: Success (no differences)
-- 1: Error
-- 2: Differences detected
-
-**JSON Output**
-- Machine-readable diff output
-- Easy to parse in CI/CD pipelines
-- Structured change information
-
-**GitHub Action Ready**
-- Easy integration with GitHub Actions
-- Schema drift detection
-- Pull request comments
-
-### Supported Objects
-
-- Tables (including partitions)
-- Views (including materialized views)
-- Functions (including procedures and aggregates)
-- Indexes
-- Constraints (primary keys, foreign keys, unique, check)
-- Triggers
-- Policies (row-level security)
-- Types (composite, range, enum, domains)
-- Sequences
-- Foreign tables
-- Event triggers
-- Rules
-- Operators
-- Casts
-- Publications and subscriptions
-- Extensions
+**Supported objects:** tables (+ partitions), views (+ materialized), functions/procedures/aggregates,
+indexes, constraints, triggers, event triggers, rules, row-level policies, types
+(composite/range/enum/domain), sequences, foreign tables, operators, casts,
+publications/subscriptions, extensions.
 
 ---
 
@@ -211,7 +74,20 @@ pgschema-export.exe --help
 
 ## Usage
 
-See the full guide [USAGE_GUIDE.md](USAGE_GUIDE.md)
+See the full guide in [USAGE_GUIDE.md](USAGE_GUIDE.md). Run `pgschema-export --help`
+for all flags. Commands at a glance:
+
+| Command | Purpose |
+| --- | --- |
+| `export` | Export a live database to structured files |
+| `split-dump` | Split an existing `pg_dump` into the same layout |
+| `diff` | Compare two schemas (dir/live, any combination) |
+| `migrate` | Generate `up`/`down` migration scripts |
+| `plan` / `apply` | Reviewable plan, then apply/roll back on a live DB |
+| `drift` | Check a live DB against the committed schema |
+| `fingerprint` | Generate/verify a deterministic schema hash |
+| `watch` | Re-diff/export automatically on changes |
+| `init` | Scaffold a config file |
 
 ### Export from PostgreSQL
 
@@ -374,122 +250,60 @@ In a `--safe` plan, destructive statements are skipped automatically.
 
 ---
 
-## Why not just pg_dump?
+## Exit codes (CI/CD)
 
-`pg_dump` is great for backups.
-
-PgSchemaExporter is for development workflows:
-
-* Git-friendly structure
-* readable schema
-* code review
-* CI/CD
-
----
-
-## Exit codes for CI/CD
-
-The following exit codes are used for CI gating:
-
-- **0** — Success (no differences detected, or operation completed successfully)
-- **1** — Error (invalid arguments, missing files, connection failure, etc.)
-- **2** — Differences detected (used by `diff` command to signal schema changes)
-
-Example CI check:
+- **0** — success / no differences
+- **1** — error (bad arguments, missing files, connection failure)
+- **2** — differences or drift detected
 
 ```bash
 pgschema-export diff --left ./db-schema --right ./db-schema-live --format json
-if [ $? -eq 2 ]; then
-  echo "Schema changes detected!"
-  exit 1
-fi
+if [ $? -eq 2 ]; then echo "Schema changes detected"; exit 1; fi
 ```
 
----
-
-## Designed for
-
-* Backend developers
-* DevOps engineers
-* Teams using Git for DB versioning
-
----
-
-## Current status (v1.0.0 direction)
-
-* schema-only focus
-* no data migration yet
-* broader PostgreSQL coverage, including domains, foreign tables, and materialized views
-* improved deployment ordering for real-world object dependencies
+Built for teams that version their database in Git: review DB changes in pull
+requests, generate clean migrations, and gate CI on schema drift. Currently
+schema-only (no data migration).
 
 ---
 
 ## Roadmap
 
-* v0.6.0  Deployment Manifest ✅
-* v0.7.0  Triggers and Policies Export ✅
-* v0.8.0  Schema Diff ✅
-* v0.9.0  Dependency Graph ✅
-* v1.0.0  Stability, diagnostics, and broader PostgreSQL coverage ✅
-* v1.1.0  Migration Generation — semantic diff and runnable `ALTER` up/down scripts ✅
-* v1.2.0  Live-to-Live Diff & CI/CD — live database comparison, GitHub Action, JSON diff output ✅
-* v1.3.0  Broader Object Coverage — event triggers, rules, aggregates, operators, casts, publications/subscriptions, composite/range types ✅
-* v1.3.1  Bug fixes — catalog-based DDL generation for the new object kinds ✅
-* v1.4.0  Developer Experience — watch mode, `init` command, HTML diff report, parallel export ✅
-* v1.4.1  Bug fixes — watcher cancellation, temp-dir cleanup, subscription null-handling, schema normalization ✅
-* v1.5.0  Developer Experience Enhancements — structured logging, progress reporting, `--verbose`/`--quiet`, actionable errors, config validation ✅
-* v1.6.0  Advanced Diff Features — customizable/parallel live-db diff, `--ignore-comments`/`--ignore-whitespace`, context-aware line diffs, per-type statistics ✅
-* v1.7.0  Safety & CI/CD — drift detection, schema fingerprint validation, migration history tracking, GitHub Action drift workflow ✅
-* v1.8.0  Production Features — declarative plan/apply workflow, online DDL (concurrent indexes), hazard warnings, lock/statement timeout configuration ✅
+Shipped through **v1.8.0**: export, `pg_dump` split, schema diff, dependency-ordered
+deploy, migration generation, live-to-live diff, broad object coverage, watch mode,
+HTML reports, parallel export, structured logging, advanced diff options, drift
+detection, schema fingerprints, and the declarative plan/apply workflow with online
+DDL and hazard warnings.
 
-What will be done in the next releases:
+**Next:**
+- **v1.9.0** — ER-diagram visualization, performance profiling, richer error messages.
+- **v2.0.0** — multi-database support (MySQL, SQLite, SQL Server), cloud integrations, AI-assisted migrations.
 
-### v1.9.0 - Developer Experience (Planned)
-**Features:**
-- Schema visualization (ER diagrams)
-- Performance profiling
-- Improved error messages
-- Better progress reporting
+<details>
+<summary>Full release history</summary>
 
-### v2.0.0 - Strategic Expansion (Planned)
-**Features:**
-- Multi-database support (MySQL, SQLite, SQL Server)
-- Cloud integration (AWS RDS, GCP Cloud SQL, Azure)
-- AI-assisted migration generation
+* v0.6.0  Deployment Manifest
+* v0.7.0  Triggers and Policies Export
+* v0.8.0  Schema Diff
+* v0.9.0  Dependency Graph
+* v1.0.0  Stability, diagnostics, and broader PostgreSQL coverage
+* v1.1.0  Migration Generation — semantic diff and runnable `ALTER` up/down scripts
+* v1.2.0  Live-to-Live Diff & CI/CD — live database comparison, GitHub Action, JSON diff output
+* v1.3.0  Broader Object Coverage — event triggers, rules, aggregates, operators, casts, publications/subscriptions, composite/range types
+* v1.3.1  Bug fixes — catalog-based DDL generation for the new object kinds
+* v1.4.0  Developer Experience — watch mode, `init` command, HTML diff report, parallel export
+* v1.4.1  Bug fixes — watcher cancellation, temp-dir cleanup, subscription null-handling, schema normalization
+* v1.5.0  Developer Experience Enhancements — structured logging, progress reporting, `--verbose`/`--quiet`, actionable errors, config validation
+* v1.6.0  Advanced Diff Features — customizable/parallel live-db diff, `--ignore-comments`/`--ignore-whitespace`, context-aware line diffs, per-type statistics
+* v1.7.0  Safety & CI/CD — drift detection, schema fingerprint validation, migration history tracking, GitHub Action drift workflow
+* v1.8.0  Production Features — declarative plan/apply workflow, online DDL (concurrent indexes), hazard warnings, lock/statement timeout configuration
 
----
+</details>
 
-## Example use cases
-
-* review DB changes in pull requests
-* version schema in Git
-* generate clean migrations
-* refactor legacy databases
-
----
-
-## Release Notes
-
-See [RELEASE_NOTES_1.8.0.md](RELEASE_NOTES_1.8.0.md) for the latest changes.
-
-## Feedback
-
-If you've ever struggled with `pg_dump` in Git — this tool is for you.
-
-Open an issue or share your workflow.
-
----
-
-## Support
-
-If this project helps you:
-
-* ⭐ Star the repo
-* 🐛 Report issues
-* 💡 Suggest features
+Latest changes: [RELEASE_NOTES_1.8.0.md](RELEASE_NOTES_1.8.0.md).
 
 ---
 
 ## License
 
-MIT
+MIT. Contributions and issues welcome — if this project helps you, ⭐ the repo.
