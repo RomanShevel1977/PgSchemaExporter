@@ -211,7 +211,7 @@ pgschema-export.exe --help
 
 ## Usage
 
-See the full guide [USAGE_GUIDE.md](USAGE_GUIDE.md)
+See the full guide [USAGE_GUIDE.md](doc/USAGE_GUIDE.md)
 
 ### Export from PostgreSQL
 
