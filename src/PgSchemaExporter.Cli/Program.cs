@@ -9,11 +9,13 @@ using PgSchemaExporter.Core.Drift;
 using PgSchemaExporter.Core.Integrity;
 using PgSchemaExporter.Core.Metadata;
 using PgSchemaExporter.Core.Migration;
+using PgSchemaExporter.Core.Migration.Hazards;
+using PgSchemaExporter.Core.Migration.Plan;
 using PgSchemaExporter.Core.Options;
 using PgSchemaExporter.Core.Output;
 using PgSchemaExporter.Core.Scripting;
 
-const string VersionString = "1.7.0";
+const string VersionString = "1.8.0";
 
 if (args.Length == 0 || args.Contains("--help") || args.Contains("-h"))
 {
@@ -111,11 +113,16 @@ try
             return;
         }
 
+        if (options.WarnHazards)
+            PrintHazards(HazardAnalyzer.Analyze(script)
+                .Select(h => (h.Severity.ToString(), h.Category.ToString(), h.Message, h.Statement)));
+
         if (options.Preview)
         {
-            Console.WriteLine(script.RenderUp(options.Safe));
+            var renderOptions = options.ToRenderOptions();
+            Console.WriteLine(script.RenderUp(renderOptions));
             Console.WriteLine("-- ----------------------------------------------------------------");
-            Console.WriteLine(script.RenderDown(options.Safe));
+            Console.WriteLine(script.RenderDown(renderOptions));
         }
         else
         {
@@ -226,24 +233,28 @@ try
         var result = await detector.DetectAsync(options, progress, logger);
 
         var reportWriter = new SchemaDiffReportWriter();
+
+        // The diff report goes to stdout (may be JSON/HTML for machine consumption);
+        // the human-readable drift summary goes to stderr so it never corrupts
+        // structured stdout output (e.g. `drift --format json | jq`).
         Console.WriteLine(reportWriter.BuildReport(result.Diff, options.Format));
 
         if (result.HasDrifted)
         {
-            Console.WriteLine("Drift detected between the committed schema and the live database:");
-            Console.WriteLine($"  Missing from live DB:   {result.Missing.Count}");
-            Console.WriteLine($"  Unexpected in live DB:  {result.Unexpected.Count}");
-            Console.WriteLine($"  Modified definitions:   {result.Modified.Count}");
+            Console.Error.WriteLine("Drift detected between the committed schema and the live database:");
+            Console.Error.WriteLine($"  Missing from live DB:   {result.Missing.Count}");
+            Console.Error.WriteLine($"  Unexpected in live DB:  {result.Unexpected.Count}");
+            Console.Error.WriteLine($"  Modified definitions:   {result.Modified.Count}");
         }
         else
         {
-            Console.WriteLine("No drift detected. The live database matches the committed schema.");
+            Console.Error.WriteLine("No drift detected. The live database matches the committed schema.");
         }
 
         if (!string.IsNullOrWhiteSpace(options.OutputFile))
         {
             await reportWriter.WriteAsync(options.OutputFile, result.Diff, options.Format);
-            Console.WriteLine($"Report written to: {Path.GetFullPath(options.OutputFile)}");
+            Console.Error.WriteLine($"Report written to: {Path.GetFullPath(options.OutputFile)}");
         }
 
         Environment.ExitCode = result.HasDrifted ? 2 : 0;
@@ -270,6 +281,18 @@ try
                 Console.Error.WriteLine("Fingerprint MISMATCH. The schema has changed since the fingerprint was generated.");
                 Console.Error.WriteLine($"  Expected: {expected.Fingerprint}");
                 Console.Error.WriteLine($"  Actual:   {result.Fingerprint}");
+
+                var comparison = SchemaFingerprint.CompareFiles(expected.Files, result);
+                if (comparison.HasDifferences)
+                {
+                    foreach (var path in comparison.Added)
+                        Console.Error.WriteLine($"  + added:    {path}");
+                    foreach (var path in comparison.Removed)
+                        Console.Error.WriteLine($"  - removed:  {path}");
+                    foreach (var path in comparison.Modified)
+                        Console.Error.WriteLine($"  ~ modified: {path}");
+                }
+
                 Environment.ExitCode = 2;
             }
             return;
@@ -283,6 +306,72 @@ try
             await SchemaFingerprintFile.WriteAsync(output, result);
             Console.WriteLine($"Written to: {Path.GetFullPath(output)}");
         }
+
+        return;
+    }
+
+    if (string.Equals(command, "plan", StringComparison.OrdinalIgnoreCase))
+    {
+        var (migrateOptions, planFile, format) = CliParser.ParsePlanOptions(args.Skip(1).ToArray());
+
+        var planner = new MigrationPlanner();
+        var plan = planner.CreatePlan(migrateOptions);
+
+        if (string.Equals(format, "json", StringComparison.OrdinalIgnoreCase))
+            Console.WriteLine(MigrationPlanFile.Serialize(plan));
+        else
+            Console.WriteLine(MigrationPlanRenderer.RenderHuman(plan));
+
+        if (!string.IsNullOrWhiteSpace(planFile))
+        {
+            await MigrationPlanFile.WriteAsync(planFile, plan);
+            Console.WriteLine($"Plan written to: {Path.GetFullPath(planFile)}");
+        }
+
+        // Exit code 2 signals there are pending changes (useful for CI gating).
+        Environment.ExitCode = plan.HasChanges ? 2 : 0;
+        return;
+    }
+
+    if (string.Equals(command, "apply", StringComparison.OrdinalIgnoreCase))
+    {
+        var applyArgs = CliParser.ParseApplyOptions(args.Skip(1).ToArray());
+
+        var plan = await MigrationPlanFile.ReadAsync(applyArgs.PlanFile);
+
+        if (!plan.HasChanges)
+        {
+            Console.WriteLine("Plan contains no changes. Nothing to apply.");
+            return;
+        }
+
+        PrintHazards(plan.Hazards
+            .Select(h => (h.Severity, h.Category, h.Message, h.Statement)));
+
+        if (!applyArgs.DryRun && !applyArgs.AssumeYes)
+        {
+            Console.Write($"Apply {(applyArgs.Rollback ? "rollback (down)" : "up")} migration to the target database? [y/N] ");
+            var answer = Console.ReadLine();
+            if (!string.Equals(answer?.Trim(), "y", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("Aborted.");
+                Environment.ExitCode = 1;
+                return;
+            }
+        }
+
+        var applier = new MigrationApplier();
+        var result = await applier.ApplyAsync(plan, new MigrationApplier.ApplyOptions
+        {
+            ConnectionString = applyArgs.ConnectionString,
+            Rollback = applyArgs.Rollback,
+            DryRun = applyArgs.DryRun
+        }, progress, logger);
+
+        if (result.DryRun)
+            Console.WriteLine($"Dry run complete. {result.Skipped} destructive statement(s) would be skipped (safe plan).");
+        else
+            Console.WriteLine($"Applied {result.Executed} statement(s). Skipped {result.Skipped}.");
 
         return;
     }
@@ -485,6 +574,22 @@ static MigrationOptions ParseMigrateOptions(string[] args)
                 options.Preview = true;
                 break;
 
+            case "--online-ddl":
+                options.OnlineDdl = true;
+                break;
+
+            case "--lock-timeout":
+                options.LockTimeout = NextValue();
+                break;
+
+            case "--statement-timeout":
+                options.StatementTimeout = NextValue();
+                break;
+
+            case "--warn-hazards":
+                options.WarnHazards = true;
+                break;
+
             default:
                 throw new ArgumentException($"Unknown argument: {arg}");
         }
@@ -589,10 +694,33 @@ static Verbosity ResolveVerbosity(string[] args)
     return args.Contains("--verbose") ? Verbosity.Verbose : Verbosity.Normal;
 }
 
+static void PrintHazards(IEnumerable<(string Severity, string Category, string Message, string Statement)> hazards)
+{
+    var list = hazards.ToList();
+    if (list.Count == 0)
+        return;
+
+    static int Rank(string severity) => severity.ToLowerInvariant() switch
+    {
+        "high" => 3,
+        "medium" => 2,
+        "low" => 1,
+        _ => 0
+    };
+
+    Console.WriteLine($"Hazards detected ({list.Count}):");
+    foreach (var hazard in list.OrderByDescending(h => Rank(h.Severity)))
+    {
+        Console.WriteLine($"  [{hazard.Severity.ToUpperInvariant()}] {hazard.Category}: {hazard.Message}");
+        Console.WriteLine($"      {hazard.Statement}");
+    }
+    Console.WriteLine();
+}
+
 static void PrintHelp()
 {
     Console.WriteLine("""
-PostgreSQL Git-Native Schema Exporter 1.7.0
+PostgreSQL Git-Native Schema Exporter 1.8.0
 
 Usage:
   pgschema-export init [--output "./pgschema-export.json"]
@@ -603,6 +731,8 @@ Usage:
   pgschema-export migrate --from "./old-schema" --to "./new-schema" --output "./migrations"
   pgschema-export drift --schema "./db-schema" --connection "<connection-string>"
   pgschema-export fingerprint --schema "./db-schema" [--output schema.fingerprint.json]
+  pgschema-export plan --from "./old-schema" --to "./new-schema" --output plan.json
+  pgschema-export apply --plan plan.json --connection "<connection-string>"
 
 Commands:
   init         Create a pgschema-export.json config template
@@ -613,6 +743,8 @@ Commands:
   migrate      Generate up/down migration scripts between two exported schemas
   drift        Detect drift between a committed schema directory and a live DB
   fingerprint  Compute (or verify) a SHA256 fingerprint of a schema directory
+  plan         Generate a reviewable migration plan (declarative workflow)
+  apply        Apply a migration plan to a live database
 
 Global options:
       --verbose          Print detailed per-object progress and debug logs (to stderr)
@@ -670,6 +802,29 @@ Migrate options:
       --safe             Emit destructive statements (DROP, type changes) as comments
       --preview          Print the migration to stdout without writing files
                          A history.json record is appended to the output directory.
+      --online-ddl       Rewrite index create/drop to CONCURRENTLY (zero-downtime)
+      --lock-timeout     Emit SET lock_timeout guard (e.g. 5s, 30s, 1min)
+      --statement-timeout Emit SET statement_timeout guard
+      --warn-hazards     Print a hazard analysis of the generated migration
+
+Plan options:
+  -f, --from             Baseline (old) exported schema directory
+  -t, --to               Target (new) exported schema directory
+  -o, --output           Optional path to write the plan JSON file
+  -n, --name             Optional plan name
+      --format           Output format: human (default) or json
+      --safe             Mark destructive statements to be skipped on apply
+      --online-ddl       Rewrite index create/drop to CONCURRENTLY
+      --lock-timeout     Capture a lock_timeout guard in the plan
+      --statement-timeout Capture a statement_timeout guard in the plan
+                         Exit code 2 indicates the plan contains pending changes.
+
+Apply options:
+  -p, --plan             Path to a plan JSON file produced by 'plan'
+  -c, --connection       Target PostgreSQL connection string
+      --rollback         Apply the down (rollback) direction instead of up
+      --dry-run          Print statements without executing them
+  -y, --yes              Skip the interactive confirmation prompt
 
 Drift options:
   -s, --schema           Committed exported schema directory (expected state)

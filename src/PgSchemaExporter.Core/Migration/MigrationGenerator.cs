@@ -40,10 +40,19 @@ public sealed class MigrationGenerator
                 BuildChanged(kind, fromContent!, toContent!, up, down);
         }
 
+        var orderedUp = up.OrderBy(s => (int)s.Kind).ToList();
+        var orderedDown = down.OrderByDescending(s => (int)s.Kind).ToList();
+
+        if (options.OnlineDdl)
+        {
+            orderedUp = OnlineDdlRewriter.Rewrite(orderedUp);
+            orderedDown = OnlineDdlRewriter.Rewrite(orderedDown);
+        }
+
         return new MigrationScript
         {
-            Up = up.OrderBy(s => (int)s.Kind).ToList(),
-            Down = down.OrderByDescending(s => (int)s.Kind).ToList()
+            Up = orderedUp,
+            Down = orderedDown
         };
     }
 

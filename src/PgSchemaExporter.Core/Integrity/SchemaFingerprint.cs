@@ -67,6 +67,66 @@ public static class SchemaFingerprint
             Files = fileHashes
         };
     }
+
+    /// <summary>
+    /// Compares a freshly computed fingerprint <paramref name="actual"/> against a
+    /// stored manifest, reporting which files were added, removed, or modified.
+    /// Returns an empty comparison when the manifest has no per-file hashes.
+    /// </summary>
+    public static SchemaFingerprintComparison CompareFiles(
+        IReadOnlyList<SchemaFileHash>? expectedFiles,
+        SchemaFingerprintResult actual)
+    {
+        if (expectedFiles is null || expectedFiles.Count == 0)
+            return new SchemaFingerprintComparison();
+
+        var expected = expectedFiles.ToDictionary(f => f.Path, f => f.Hash, StringComparer.Ordinal);
+        var current = actual.Files.ToDictionary(f => f.Path, f => f.Hash, StringComparer.Ordinal);
+
+        var added = new List<string>();
+        var removed = new List<string>();
+        var modified = new List<string>();
+
+        foreach (var (path, hash) in current)
+        {
+            if (!expected.TryGetValue(path, out var expectedHash))
+                added.Add(path);
+            else if (!string.Equals(expectedHash, hash, StringComparison.OrdinalIgnoreCase))
+                modified.Add(path);
+        }
+
+        foreach (var path in expected.Keys)
+        {
+            if (!current.ContainsKey(path))
+                removed.Add(path);
+        }
+
+        added.Sort(StringComparer.Ordinal);
+        removed.Sort(StringComparer.Ordinal);
+        modified.Sort(StringComparer.Ordinal);
+
+        return new SchemaFingerprintComparison
+        {
+            Added = added,
+            Removed = removed,
+            Modified = modified
+        };
+    }
+}
+
+/// <summary>File-level differences between a stored fingerprint manifest and a recomputed one.</summary>
+public sealed class SchemaFingerprintComparison
+{
+    /// <summary>Files present now but not in the stored manifest.</summary>
+    public IReadOnlyList<string> Added { get; init; } = [];
+
+    /// <summary>Files in the stored manifest but missing now.</summary>
+    public IReadOnlyList<string> Removed { get; init; } = [];
+
+    /// <summary>Files whose content hash changed.</summary>
+    public IReadOnlyList<string> Modified { get; init; } = [];
+
+    public bool HasDifferences => Added.Count > 0 || Removed.Count > 0 || Modified.Count > 0;
 }
 
 public sealed class SchemaFingerprintResult

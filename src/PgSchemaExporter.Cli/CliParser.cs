@@ -2,10 +2,150 @@ namespace PgSchemaExporter.Cli;
 
 using PgSchemaExporter.Core.Diff;
 using PgSchemaExporter.Core.Drift;
+using PgSchemaExporter.Core.Migration;
 using PgSchemaExporter.Core.Options;
+
+public sealed class ApplyArgs
+{
+    public string PlanFile { get; set; } = "";
+    public string ConnectionString { get; set; } = "";
+    public bool Rollback { get; set; }
+    public bool DryRun { get; set; }
+    public bool AssumeYes { get; set; }
+}
 
 public static class CliParser
 {
+    /// <summary>
+    /// Parses <c>plan</c> arguments into migration options (with <c>Preview</c> set
+    /// so no output directory is required), an optional plan file path, and the
+    /// output format (<c>human</c> or <c>json</c>).
+    /// </summary>
+    public static (MigrationOptions Options, string? PlanFile, string Format) ParsePlanOptions(string[] args)
+    {
+        var options = new MigrationOptions { Preview = true };
+        string? planFile = null;
+        var format = "human";
+
+        for (var i = 0; i < args.Length; i++)
+        {
+            var arg = args[i];
+
+            string NextValue()
+            {
+                if (i + 1 >= args.Length)
+                    throw new ArgumentException($"Missing value for {arg}");
+
+                return args[++i];
+            }
+
+            switch (arg)
+            {
+                case "--from":
+                case "-f":
+                    options.FromDirectory = NextValue();
+                    break;
+
+                case "--to":
+                case "-t":
+                    options.ToDirectory = NextValue();
+                    break;
+
+                case "--output":
+                case "-o":
+                    planFile = NextValue();
+                    break;
+
+                case "--name":
+                case "-n":
+                    options.Name = NextValue();
+                    break;
+
+                case "--format":
+                    format = NextValue().ToLowerInvariant();
+                    if (format is not ("human" or "json"))
+                        throw new ArgumentException($"Unknown format: {format}. Use 'human' or 'json'.");
+                    break;
+
+                case "--safe":
+                    options.Safe = true;
+                    break;
+
+                case "--online-ddl":
+                    options.OnlineDdl = true;
+                    break;
+
+                case "--lock-timeout":
+                    options.LockTimeout = NextValue();
+                    break;
+
+                case "--statement-timeout":
+                    options.StatementTimeout = NextValue();
+                    break;
+
+                default:
+                    throw new ArgumentException($"Unknown argument: {arg}");
+            }
+        }
+
+        return (options, planFile, format);
+    }
+
+    public static ApplyArgs ParseApplyOptions(string[] args)
+    {
+        var result = new ApplyArgs();
+
+        for (var i = 0; i < args.Length; i++)
+        {
+            var arg = args[i];
+
+            string NextValue()
+            {
+                if (i + 1 >= args.Length)
+                    throw new ArgumentException($"Missing value for {arg}");
+
+                return args[++i];
+            }
+
+            switch (arg)
+            {
+                case "--plan":
+                case "-p":
+                    result.PlanFile = NextValue();
+                    break;
+
+                case "--connection":
+                case "-c":
+                    result.ConnectionString = NextValue();
+                    break;
+
+                case "--rollback":
+                    result.Rollback = true;
+                    break;
+
+                case "--dry-run":
+                    result.DryRun = true;
+                    break;
+
+                case "--yes":
+                case "-y":
+                    result.AssumeYes = true;
+                    break;
+
+                default:
+                    throw new ArgumentException($"Unknown argument: {arg}");
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(result.PlanFile))
+            throw new ArgumentException("Plan file is required (--plan).");
+
+        if (!result.DryRun && string.IsNullOrWhiteSpace(result.ConnectionString))
+            throw new ArgumentException("Connection string is required unless --dry-run is used (--connection).");
+
+        return result;
+    }
+
     public static DriftOptions ParseDriftOptions(string[] args)
     {
         var options = new DriftOptions();

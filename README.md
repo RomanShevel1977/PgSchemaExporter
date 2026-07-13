@@ -298,6 +298,14 @@ Exit code `2` signals drift was detected, which makes it easy to fail a CI job.
 See [.github/workflows/schema-drift.yml](.github/workflows/schema-drift.yml) for
 a ready-to-use scheduled drift check.
 
+The diff report is written to **stdout** (so `drift --format json | jq` stays
+valid), while the human-readable summary goes to **stderr**.
+
+> **Note:** drift compares your committed directory against a full live export.
+> For accurate results, commit a schema directory produced by `export` with the
+> default (complete) object coverage. A partial export can surface objects that
+> exist in the database as false "unexpected" drift.
+
 ---
 
 ### Fingerprint a schema
@@ -315,6 +323,54 @@ pgschema-export fingerprint --schema "./db-schema" --verify ./db-schema/schema.f
 
 The fingerprint normalizes line endings, so it is stable across platforms and
 independent of file ordering.
+
+---
+
+### Production-safe migrations
+
+`migrate` supports zero-downtime and safety options:
+
+```bash
+pgschema-export migrate --from ./old --to ./new --output ./migrations \
+  --online-ddl \                # CREATE/DROP INDEX rewritten to CONCURRENTLY (outside txn)
+  --lock-timeout 5s \           # emit SET lock_timeout guard
+  --statement-timeout 1min \    # emit SET statement_timeout guard
+  --warn-hazards                # print a hazard analysis of the migration
+```
+
+- **`--online-ddl`** rewrites index builds to `CONCURRENTLY` and emits them
+  outside the transaction to avoid blocking writes.
+- **`--lock-timeout` / `--statement-timeout`** add session guards so a migration
+  fails fast instead of blocking behind a long-running query.
+- **`--warn-hazards`** categorizes destructive/lock-heavy operations
+  (`TableDrop`, `ColumnDrop`, `TypeChange`, `NotNull`, `IndexBuild`, …) by
+  severity so you can review them before running.
+
+---
+
+### Declarative plan / apply workflow
+
+A Terraform-style workflow: generate a reviewable plan, then apply it.
+
+```bash
+# 1. Generate a plan (human-readable by default; exit code 2 if changes are pending)
+pgschema-export plan --from ./db-schema --to ./db-schema-new --output plan.json
+
+# 2. Review the plan (JSON is machine-readable, e.g. for PR automation)
+pgschema-export plan --from ./db-schema --to ./db-schema-new --format json
+
+# 3. Apply the plan to a live database (prompts for confirmation)
+pgschema-export apply --plan plan.json --connection "Host=localhost;Database=mydb;Username=postgres;Password=123"
+
+# Preview without executing, or roll back:
+pgschema-export apply --plan plan.json --dry-run
+pgschema-export apply --plan plan.json --connection "<conn>" --rollback --yes
+```
+
+The plan captures the up/down statements, render settings (online DDL, timeouts),
+and a hazard analysis. On apply, transactional statements run inside a single
+transaction; concurrent statements (e.g. concurrent index builds) run outside it.
+In a `--safe` plan, destructive statements are skipped automatically.
 
 ---
 
@@ -384,16 +440,9 @@ fi
 * v1.5.0  Developer Experience Enhancements — structured logging, progress reporting, `--verbose`/`--quiet`, actionable errors, config validation ✅
 * v1.6.0  Advanced Diff Features — customizable/parallel live-db diff, `--ignore-comments`/`--ignore-whitespace`, context-aware line diffs, per-type statistics ✅
 * v1.7.0  Safety & CI/CD — drift detection, schema fingerprint validation, migration history tracking, GitHub Action drift workflow ✅
+* v1.8.0  Production Features — declarative plan/apply workflow, online DDL (concurrent indexes), hazard warnings, lock/statement timeout configuration ✅
 
 What will be done in the next releases:
-
-### v1.8.0 - Production Features (Planned)
-**Features:**
-- Declarative plan mode (Terraform-style plan-review-apply workflow)
-- Online DDL support (zero-downtime migrations, concurrent indexes)
-- Hazard warnings (destructive operation detection)
-- Lock timeout configuration
-- Schema documentation generation
 
 ### v1.9.0 - Developer Experience (Planned)
 **Features:**
@@ -421,7 +470,7 @@ What will be done in the next releases:
 
 ## Release Notes
 
-See [RELEASE_NOTES_1.7.0.md](RELEASE_NOTES_1.7.0.md) for the latest changes.
+See [RELEASE_NOTES_1.8.0.md](RELEASE_NOTES_1.8.0.md) for the latest changes.
 
 ## Feedback
 

@@ -29,6 +29,39 @@ public sealed class MigrationOptions
     /// </summary>
     public bool Preview { get; set; }
 
+    /// <summary>
+    /// When true, index create/drop operations are rewritten to their
+    /// <c>CONCURRENTLY</c> forms and emitted outside the transaction block to
+    /// avoid taking heavy locks (zero-downtime friendly).
+    /// </summary>
+    public bool OnlineDdl { get; set; }
+
+    /// <summary>
+    /// Optional PostgreSQL <c>lock_timeout</c> (e.g. <c>"5s"</c>) emitted as a
+    /// session-level guard before the migration runs.
+    /// </summary>
+    public string? LockTimeout { get; set; }
+
+    /// <summary>
+    /// Optional PostgreSQL <c>statement_timeout</c> emitted as a session-level
+    /// guard before the migration runs.
+    /// </summary>
+    public string? StatementTimeout { get; set; }
+
+    /// <summary>
+    /// When true, a hazard analysis of the generated migration is printed,
+    /// warning about destructive or lock-heavy operations.
+    /// </summary>
+    public bool WarnHazards { get; set; }
+
+    /// <summary>Builds the render options that mirror these migration options.</summary>
+    public MigrationRenderOptions ToRenderOptions() => new()
+    {
+        Safe = Safe,
+        LockTimeout = LockTimeout,
+        StatementTimeout = StatementTimeout
+    };
+
     public void EnsureValid()
     {
         if (string.IsNullOrWhiteSpace(FromDirectory))
@@ -45,5 +78,8 @@ public sealed class MigrationOptions
 
         if (!Preview && string.IsNullOrWhiteSpace(OutputDirectory))
             throw new ArgumentException("Output directory is required unless --preview is used.");
+
+        MigrationTimeout.EnsureValid(LockTimeout, "--lock-timeout");
+        MigrationTimeout.EnsureValid(StatementTimeout, "--statement-timeout");
     }
 }

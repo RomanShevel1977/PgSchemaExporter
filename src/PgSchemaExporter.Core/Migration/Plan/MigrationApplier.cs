@@ -1,0 +1,182 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
+using PgSchemaExporter.Core.Diagnostics;
+
+namespace PgSchemaExporter.Core.Migration.Plan;
+
+/// <summary>
+/// Executes a reviewed <see cref="MigrationPlan"/> against a live PostgreSQL
+/// database. Transactional statements run inside a single transaction; statements
+/// flagged to run outside a transaction (e.g. concurrent index builds) are
+/// executed separately with autocommit.
+/// </summary>
+public sealed class MigrationApplier
+{
+    public sealed class ApplyResult
+    {
+        public int Executed { get; init; }
+        public int Skipped { get; init; }
+        public bool DryRun { get; init; }
+    }
+
+    public sealed class ApplyOptions
+    {
+        public required string ConnectionString { get; init; }
+
+        /// <summary>Apply the down direction instead of up (rollback).</summary>
+        public bool Rollback { get; init; }
+
+        /// <summary>Print statements without executing them.</summary>
+        public bool DryRun { get; init; }
+    }
+
+    public async Task<ApplyResult> ApplyAsync(
+        MigrationPlan plan,
+        ApplyOptions options,
+        IProgressReporter? progress = null,
+        ILogger? logger = null,
+        CancellationToken cancellationToken = default)
+    {
+        progress ??= NullProgressReporter.Instance;
+        logger ??= NullLogger.Instance;
+
+        // Defense in depth: a plan file may have been hand-edited, so re-validate
+        // the timeout values before they are interpolated into SQL.
+        MigrationTimeout.EnsureValid(plan.Settings.LockTimeout, nameof(plan.Settings.LockTimeout));
+        MigrationTimeout.EnsureValid(plan.Settings.StatementTimeout, nameof(plan.Settings.StatementTimeout));
+
+        var statements = options.Rollback ? plan.Down : plan.Up;
+
+        if (statements.Count == 0)
+        {
+            logger.LogInformation("Plan contains no statements to apply.");
+            return new ApplyResult { Executed = 0, Skipped = 0, DryRun = options.DryRun };
+        }
+
+        var toExecute = new List<PlanStatement>();
+        var skipped = 0;
+
+        foreach (var statement in statements)
+        {
+            // Safe plans never execute destructive statements automatically.
+            if (plan.Settings.Safe && statement.Destructive)
+            {
+                logger.LogWarning("Skipping destructive statement (safe plan): {Sql}", statement.Sql);
+                skipped++;
+                continue;
+            }
+
+            toExecute.Add(statement);
+        }
+
+        if (options.DryRun)
+        {
+            foreach (var statement in toExecute)
+                progress.Step($"[dry-run] {FirstLine(statement.Sql)}");
+
+            return new ApplyResult { Executed = 0, Skipped = skipped, DryRun = true };
+        }
+
+        var transactional = toExecute.Where(s => !s.RunsOutsideTransaction).ToList();
+        var concurrent = toExecute.Where(s => s.RunsOutsideTransaction).ToList();
+
+        await using var connection = new NpgsqlConnection(options.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        var executed = 0;
+
+        async Task RunConcurrentAsync()
+        {
+            foreach (var statement in concurrent)
+            {
+                progress.Step($"Applying (concurrent): {FirstLine(statement.Sql)}");
+                await ExecuteAsync(connection, plan.Settings, statement.Sql, cancellationToken);
+                executed++;
+            }
+        }
+
+        async Task RunTransactionalAsync()
+        {
+            if (transactional.Count == 0)
+                return;
+
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                await ApplySessionSettingsAsync(connection, transaction, plan.Settings, cancellationToken);
+
+                foreach (var statement in transactional)
+                {
+                    progress.Step($"Applying: {FirstLine(statement.Sql)}");
+                    await ExecuteAsync(connection, statement.Sql, transaction, cancellationToken);
+                    executed++;
+                }
+
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        }
+
+        // Up: transaction first, then concurrent. Down: concurrent first, then transaction.
+        if (options.Rollback)
+        {
+            await RunConcurrentAsync();
+            await RunTransactionalAsync();
+        }
+        else
+        {
+            await RunTransactionalAsync();
+            await RunConcurrentAsync();
+        }
+
+        return new ApplyResult { Executed = executed, Skipped = skipped, DryRun = false };
+    }
+
+    private static async Task ApplySessionSettingsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        MigrationPlanSettings settings,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(settings.LockTimeout))
+            await ExecuteAsync(connection, $"SET LOCAL lock_timeout = '{settings.LockTimeout}'", transaction, cancellationToken);
+
+        if (!string.IsNullOrWhiteSpace(settings.StatementTimeout))
+            await ExecuteAsync(connection, $"SET LOCAL statement_timeout = '{settings.StatementTimeout}'", transaction, cancellationToken);
+    }
+
+    private static async Task ExecuteAsync(
+        NpgsqlConnection connection,
+        MigrationPlanSettings settings,
+        string sql,
+        CancellationToken cancellationToken)
+    {
+        // Concurrent statements run with autocommit; apply session-level timeouts first.
+        if (!string.IsNullOrWhiteSpace(settings.LockTimeout))
+            await ExecuteAsync(connection, $"SET lock_timeout = '{settings.LockTimeout}'", null, cancellationToken);
+
+        await ExecuteAsync(connection, sql, null, cancellationToken);
+    }
+
+    private static async Task ExecuteAsync(
+        NpgsqlConnection connection,
+        string sql,
+        NpgsqlTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static string FirstLine(string sql)
+    {
+        var normalized = sql.Replace("\r\n", "\n").Replace('\r', '\n').Trim();
+        var newline = normalized.IndexOf('\n');
+        return newline < 0 ? normalized : normalized[..newline] + " …";
+    }
+}

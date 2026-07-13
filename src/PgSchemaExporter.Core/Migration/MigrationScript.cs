@@ -15,11 +15,24 @@ public sealed class MigrationScript
 
     public bool HasDestructiveChanges => Up.Any(x => x.IsDestructive) || Down.Any(x => x.IsDestructive);
 
-    public string RenderUp(bool safe) => Render("Up migration (apply changes)", Up, safe);
+    /// <summary>True when any statement must run outside a transaction (e.g. concurrent index builds).</summary>
+    public bool HasConcurrentStatements => Up.Any(x => x.RunsOutsideTransaction) || Down.Any(x => x.RunsOutsideTransaction);
 
-    public string RenderDown(bool safe) => Render("Down migration (roll back changes)", Down, safe);
+    public string RenderUp(bool safe) => RenderUp(MigrationRenderOptions.ForSafe(safe));
 
-    private static string Render(string title, IReadOnlyList<MigrationStatement> statements, bool safe)
+    public string RenderDown(bool safe) => RenderDown(MigrationRenderOptions.ForSafe(safe));
+
+    public string RenderUp(MigrationRenderOptions options)
+        => Render("Up migration (apply changes)", Up, options, concurrentBeforeTransaction: false);
+
+    public string RenderDown(MigrationRenderOptions options)
+        => Render("Down migration (roll back changes)", Down, options, concurrentBeforeTransaction: true);
+
+    private static string Render(
+        string title,
+        IReadOnlyList<MigrationStatement> statements,
+        MigrationRenderOptions options,
+        bool concurrentBeforeTransaction)
     {
         var sb = new StringBuilder();
         sb.AppendLine("-- " + title);
@@ -32,30 +45,86 @@ public sealed class MigrationScript
             return sb.ToString();
         }
 
-        sb.AppendLine("BEGIN;");
-        sb.AppendLine();
+        AppendSessionSettings(sb, options);
 
-        foreach (var statement in statements)
+        var transactional = statements.Where(s => !s.RunsOutsideTransaction).ToList();
+        var concurrent = statements.Where(s => s.RunsOutsideTransaction).ToList();
+
+        void RenderConcurrent()
         {
-            if (!string.IsNullOrWhiteSpace(statement.Comment))
-                sb.AppendLine("-- " + statement.Comment);
+            if (concurrent.Count == 0)
+                return;
 
-            if (safe && statement.IsDestructive)
-            {
-                sb.AppendLine("-- DESTRUCTIVE: review and enable manually.");
-                foreach (var line in SplitLines(statement.Sql))
-                    sb.AppendLine("-- " + line);
-            }
-            else
-            {
-                sb.AppendLine(statement.Sql.TrimEnd());
-            }
-
-            sb.AppendLine();
+            sb.AppendLine("-- The following statements run OUTSIDE a transaction (cannot be wrapped in BEGIN/COMMIT).");
+            foreach (var statement in concurrent)
+                AppendStatement(sb, statement, options.Safe);
         }
 
-        sb.AppendLine("COMMIT;");
+        void RenderTransactional()
+        {
+            if (transactional.Count == 0)
+                return;
+
+            sb.AppendLine("BEGIN;");
+            sb.AppendLine();
+
+            foreach (var statement in transactional)
+                AppendStatement(sb, statement, options.Safe);
+
+            sb.AppendLine("COMMIT;");
+        }
+
+        if (concurrentBeforeTransaction)
+        {
+            RenderConcurrent();
+            RenderTransactional();
+        }
+        else
+        {
+            RenderTransactional();
+            RenderConcurrent();
+        }
+
         return sb.ToString();
+    }
+
+    private static void AppendSessionSettings(StringBuilder sb, MigrationRenderOptions options)
+    {
+        var wrote = false;
+
+        if (!string.IsNullOrWhiteSpace(options.LockTimeout))
+        {
+            sb.AppendLine($"SET lock_timeout = '{options.LockTimeout}';");
+            wrote = true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.StatementTimeout))
+        {
+            sb.AppendLine($"SET statement_timeout = '{options.StatementTimeout}';");
+            wrote = true;
+        }
+
+        if (wrote)
+            sb.AppendLine();
+    }
+
+    private static void AppendStatement(StringBuilder sb, MigrationStatement statement, bool safe)
+    {
+        if (!string.IsNullOrWhiteSpace(statement.Comment))
+            sb.AppendLine("-- " + statement.Comment);
+
+        if (safe && statement.IsDestructive)
+        {
+            sb.AppendLine("-- DESTRUCTIVE: review and enable manually.");
+            foreach (var line in SplitLines(statement.Sql))
+                sb.AppendLine("-- " + line);
+        }
+        else
+        {
+            sb.AppendLine(statement.Sql.TrimEnd());
+        }
+
+        sb.AppendLine();
     }
 
     private static IEnumerable<string> SplitLines(string text)

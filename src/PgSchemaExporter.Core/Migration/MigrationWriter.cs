@@ -29,8 +29,9 @@ public sealed class MigrationWriter
         var upPath = Path.Combine(options.OutputDirectory, $"{baseName}.up.sql");
         var downPath = Path.Combine(options.OutputDirectory, $"{baseName}.down.sql");
 
-        await File.WriteAllTextAsync(upPath, script.RenderUp(options.Safe), cancellationToken);
-        await File.WriteAllTextAsync(downPath, script.RenderDown(options.Safe), cancellationToken);
+        var renderOptions = options.ToRenderOptions();
+        await File.WriteAllTextAsync(upPath, script.RenderUp(renderOptions), cancellationToken);
+        await File.WriteAllTextAsync(downPath, script.RenderDown(renderOptions), cancellationToken);
 
         return new WriteResult { UpFile = upPath, DownFile = downPath };
     }
