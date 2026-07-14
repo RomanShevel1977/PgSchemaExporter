@@ -25,9 +25,10 @@ WORKDIR /src/tests/PgSchemaExporter.Tests
 
 # Run only integration/end-to-end tests and produce a TRX report.
 # Mount /testresults when running to retrieve the report.
-ENTRYPOINT ["dotnet", "test", "-c", "Release", "--no-build", \
-            "--filter", "FullyQualifiedName~IntegrationTests|FullyQualifiedName~EndToEndTests", \
-            "--verbosity", "normal", \
-            "--logger", "console;verbosity=normal", \
-            "--logger", "trx;LogFileName=IntegrationTestResults.trx", \
-            "--results-directory", "/testresults"]
+ENTRYPOINT ["dotnet"]
+CMD ["test", "-c", "Release", "--no-build", \
+     "--filter", "FullyQualifiedName~IntegrationTests|FullyQualifiedName~EndToEndTests", \
+     "--verbosity", "normal", \
+     "--logger", "console;verbosity=normal", \
+     "--logger", "trx;LogFileName=IntegrationTestResults.trx", \
+     "--results-directory", "/testresults"]

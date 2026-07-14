@@ -20,4 +20,10 @@ docker run --rm \
   -e TESTCONTAINERS_RYUK_DISABLED=true \
   -v /var/run/docker.sock.raw:/var/run/docker.sock \
   -v "$(pwd)/$RESULTS_DIRECTORY:/testresults" \
-  "$IMAGE_NAME"
+  "$IMAGE_NAME" \
+  test -c Release --no-build \
+  --filter "FullyQualifiedName~IntegrationTests|FullyQualifiedName~EndToEndTests" \
+  --verbosity normal \
+  --logger "console;verbosity=normal" \
+  --logger "trx;LogFileName=IntegrationTestResults.trx" \
+  --results-directory /testresults

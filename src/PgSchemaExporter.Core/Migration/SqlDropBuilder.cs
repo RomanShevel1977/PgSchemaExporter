@@ -67,7 +67,21 @@ public static class SqlDropBuilder
     private static string? BuildIndexDrop(string sql)
     {
         var name = NameAfter(sql, "INDEX");
-        return name is null ? null : $"DROP INDEX IF EXISTS {name};";
+        if (name is null)
+            return null;
+
+        var table = NameAfter(sql, "ON");
+        if (table is not null)
+        {
+            var dot = table.IndexOf('.');
+            if (dot > 0)
+            {
+                var schema = table[..dot];
+                return $"DROP INDEX IF EXISTS {schema}.{name};";
+            }
+        }
+
+        return $"DROP INDEX IF EXISTS {name};";
     }
 
     private static string? BuildConstraintDrop(string sql)

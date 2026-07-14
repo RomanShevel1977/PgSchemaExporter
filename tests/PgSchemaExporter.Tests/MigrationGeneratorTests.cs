@@ -138,7 +138,7 @@ public class MigrationGeneratorTests : IDisposable
         var script = Generate();
 
         Assert.Contains(script.Up, s => s.Sql.Contains("CREATE INDEX"));
-        Assert.Contains(script.Down, s => s.Sql == "DROP INDEX IF EXISTS users_email_idx;");
+        Assert.Contains(script.Down, s => s.Sql == "DROP INDEX IF EXISTS public.users_email_idx;");
     }
 
     [Fact]
