@@ -75,7 +75,7 @@ pgschema-export.exe --help
 
 ## Usage
 
-See the full guide in [USAGE_GUIDE.md](USAGE_GUIDE.md). Run `pgschema-export --help`
+See the full guide in [USAGE_GUIDE.md](doc/USAGE_GUIDE.md). Run `pgschema-export --help`
 for all flags. Commands at a glance:
 
 | Command | Purpose |
