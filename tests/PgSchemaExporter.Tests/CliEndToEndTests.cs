@@ -82,7 +82,7 @@ public class CliEndToEndTests : IAsyncLifetime
         Assert.Contains(summary.Counts, c => c.ObjectKind == "Tables" && c.Count > 0);
 
         // Verify files were created
-        var tablesDir = Path.Combine(outputDir, "schemas", "public", "tables");
+        var tablesDir = Path.Combine(outputDir, "tables");
         Assert.True(Directory.Exists(tablesDir));
         var tableFiles = Directory.GetFiles(tablesDir, "*.sql");
         Assert.NotEmpty(tableFiles);
@@ -171,7 +171,7 @@ public class CliEndToEndTests : IAsyncLifetime
         await ExportToDirectoryAsync(dir2);
 
         // Add a change to dir2
-        var tablesDir = Path.Combine(dir2, "schemas", "public", "tables");
+        var tablesDir = Path.Combine(dir2, "tables");
         File.WriteAllText(
             Path.Combine(tablesDir, "new_table.sql"),
             "CREATE TABLE new_table (id int);");
@@ -262,7 +262,7 @@ public class CliEndToEndTests : IAsyncLifetime
         await ExportToDirectoryAsync(fromDir);
 
         // Add a change to toDir
-        var tablesDir = Path.Combine(toDir, "schemas", "public", "tables");
+        var tablesDir = Path.Combine(toDir, "tables");
         Directory.CreateDirectory(tablesDir);
         File.WriteAllText(
             Path.Combine(tablesDir, "new_table.sql"),

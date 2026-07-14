@@ -1,5 +1,6 @@
 namespace PgSchemaExporter.Cli;
 
+using PgSchemaExporter.Core.Diagramming;
 using PgSchemaExporter.Core.Diff;
 using PgSchemaExporter.Core.Drift;
 using PgSchemaExporter.Core.Migration;
@@ -381,6 +382,84 @@ public static class CliParser
             {
                 ".html" or ".htm" => DiffFormat.Html,
                 ".json" => DiffFormat.Json,
+                _ => options.Format
+            };
+        }
+
+        return options;
+    }
+
+    public static DiagramOptions ParseDiagramOptions(string[] args)
+    {
+        var options = new DiagramOptions();
+        var formatExplicit = false;
+
+        for (var i = 0; i < args.Length; i++)
+        {
+            var arg = args[i];
+
+            string NextValue()
+            {
+                if (i + 1 >= args.Length)
+                    throw new ArgumentException($"Missing value for {arg}");
+
+                return args[++i];
+            }
+
+            switch (arg)
+            {
+                case "--connection":
+                case "-c":
+                    options.ConnectionString = NextValue();
+                    break;
+
+                case "--schema":
+                case "-s":
+                    options.SchemaDirectory = NextValue();
+                    break;
+
+                case "--output":
+                case "-o":
+                    options.OutputFile = NextValue();
+                    break;
+
+                case "--format":
+                    var format = NextValue();
+                    options.Format = format.ToLowerInvariant() switch
+                    {
+                        "mermaid" or "mmd" => DiagramFormat.Mermaid,
+                        "dot" or "graphviz" => DiagramFormat.Dot,
+                        _ => throw new ArgumentException($"Unknown format: {format}. Use 'mermaid' or 'dot'.")
+                    };
+                    formatExplicit = true;
+                    break;
+
+                case "--schemas":
+                    var schemas = Split(NextValue());
+                    if (schemas.Length == 0)
+                        throw new ArgumentException("--schemas cannot be empty");
+                    options.Schemas = schemas;
+                    break;
+
+                case "--exclude-schemas":
+                    var excludeSchemas = Split(NextValue());
+                    if (excludeSchemas.Length == 0)
+                        throw new ArgumentException("--exclude-schemas cannot be empty");
+                    options.ExcludeSchemas = excludeSchemas;
+                    break;
+
+                default:
+                    throw new ArgumentException($"Unknown argument: {arg}");
+            }
+        }
+
+        // Infer the format from the output file extension when not set explicitly.
+        if (!formatExplicit && !string.IsNullOrWhiteSpace(options.OutputFile))
+        {
+            options.Format = Path.GetExtension(options.OutputFile).ToLowerInvariant() switch
+            {
+                ".dot" or ".gv" => DiagramFormat.Dot,
+                ".mmd" or ".mermaid" => DiagramFormat.Mermaid,
                 _ => options.Format
             };
         }

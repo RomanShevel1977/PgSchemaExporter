@@ -1,0 +1,13 @@
+services:
+  integration-tests:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    network_mode: host
+    environment:
+      - TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal
+      - TESTCONTAINERS_RYUK_DISABLED=true
+    volumes:
+      - /var/run/docker.sock.raw:/var/run/docker.sock
+      - ./test-results:/testresults
+    # The Dockerfile ENTRYPOINT already runs the integration tests.

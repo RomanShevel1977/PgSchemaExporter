@@ -13,6 +13,7 @@ Complete guide to the `pgschema-export` utility for exporting, comparing, and mi
    - [diff](#diff---compare-schemas)
    - [watch](#watch---monitor-schema-changes)
    - [migrate](#migrate---generate-migrations)
+   - [diagram](#diagram---generate-er-diagram)
 4. [Common Parameters](#common-parameters)
 5. [Object Types](#object-types)
 6. [Usage Examples](#usage-examples)
@@ -29,8 +30,10 @@ Complete guide to the `pgschema-export` utility for exporting, comparing, and mi
 - Comparing two schemas and finding differences
 - Generating migration scripts between schema versions
 - Monitoring schema changes in real-time
+- Generating ER diagrams (Mermaid and Graphviz DOT)
+- Profiling command performance
 
-**Version:** 1.5.0
+**Version:** 1.9.0
 
 ---
 
@@ -56,7 +59,7 @@ pgschema-export -v
 
 Output:
 ```
-pgschema-export 1.5.0
+pgschema-export 1.9.0
 ```
 
 ### Getting Help
@@ -284,41 +287,40 @@ pgschema-export export \
 ```
 db-schema/
 ├── schemas/
-│   ├── public/
-│   │   ├── tables/
-│   │   │   ├── users.sql
-│   │   │   └── orders.sql
-│   │   ├── views/
-│   │   │   └── user_summary.sql
-│   │   ├── functions/
-│   │   │   └── calculate_total.sql
-│   │   ├── triggers/
-│   │   │   └── update_timestamp.sql
-│   │   ├── constraints/
-│   │   │   ├── users_pkey.sql
-│   │   │   └── orders_user_id_fkey.sql
-│   │   ├── indexes/
-│   │   │   └── users_email_idx.sql
-│   │   ├── sequences/
-│   │   │   └── users_id_seq.sql
-│   │   ├── types/
-│   │   │   └── status_enum.sql
-│   │   ├── domains/
-│   │   ├── policies/
-│   │   ├── comments/
-│   │   └── grants/
-│   └── audit/
-│       └── tables/
+│   ├── public.sql
+│   └── audit.sql
 ├── extensions/
 │   ├── uuid-ossp.sql
 │   └── pgcrypto.sql
-├── casts/
-├── aggregates/
-├── operators/
-├── event-triggers/
+├── types/
+│   └── public.status_enum.sql
+├── sequences/
+│   └── public.users_id_seq.sql
+├── domains/
+├── foreign_tables/
+├── tables/
+│   ├── public.users.sql
+│   └── public.orders.sql
+├── constraints/
+│   └── public.users.constraints.sql
+├── indexes/
+│   └── public.users.indexes.sql
+├── views/
+│   └── public.user_summary.sql
+├── functions/
+│   └── public.calculate_total.<hash>.sql
+├── triggers/
+│   └── public.update_timestamp.sql
+├── event_triggers/
 ├── rules/
 ├── publications/
 ├── subscriptions/
+├── policies/
+├── comments/
+├── grants/
+├── casts/
+├── aggregates/
+├── operators/
 ├── deploy.sql
 └── README.md
 ```
@@ -772,11 +774,91 @@ COMMIT;
 
 ---
 
+### diagram — Generate ER Diagram
+
+Generates an ER diagram from a live PostgreSQL database or an exported schema directory.
+
+#### Syntax
+
+```bash
+pgschema-export diagram --connection "<connection-string>" --output "<file>" [options]
+# or
+pgschema-export diagram --schema "<directory>" --output "<file>" [options]
+```
+
+#### Parameters
+
+| Parameter | Short | Description | Default |
+|-----------|-------|-------------|---------|
+| `--connection` | `-c` | PostgreSQL connection string | - |
+| `--schema` | `-s` | Exported schema directory | - |
+| `--output` | `-o` | Output file path | stdout |
+| `--format` | | `mermaid` or `dot` | inferred from output extension |
+| `--schemas` | | Comma-separated schemas to include | `public` |
+| `--exclude-schemas` | | Comma-separated schemas to exclude | - |
+
+Either `--connection` or `--schema` must be provided.
+
+#### Format Auto-Detection
+
+If `--format` is not specified, it is inferred from the `--output` extension:
+
+- `.mmd` / `.mermaid` → Mermaid
+- `.dot` / `.gv` → Graphviz DOT
+
+#### Examples
+
+**Generate Mermaid diagram from live database:**
+```bash
+pgschema-export diagram \
+  --connection "Host=localhost;Database=mydb;Username=postgres;Password=secret" \
+  --output "schema.mmd"
+```
+
+**Generate DOT diagram from exported schema directory:**
+```bash
+pgschema-export diagram \
+  --schema "./db-schema" \
+  --output "schema.dot"
+```
+
+**Render DOT to SVG:**
+```bash
+dot -Tsvg schema.dot -o schema.svg
+```
+
+**Specify explicit format:**
+```bash
+pgschema-export diagram \
+  --schema "./db-schema" \
+  --output "schema.txt" \
+  --format mermaid
+```
+
+---
+
 ## Common Parameters
 
 ### Include/Exclude Object Kinds
 
 Both `export` and `diff` commands support fine-grained control over which object types to include or exclude.
+
+### Global Flags
+
+| Flag | Description |
+|------|-------------|
+| `--verbose` | Show more detailed output |
+| `--quiet` | Show only errors |
+| `--profile` | Print a per-phase timing summary to stderr on completion |
+
+Use `--profile` to identify slow phases in large databases or CI pipelines:
+
+```bash
+pgschema-export export \
+  --connection "Host=localhost;Database=mydb;Username=postgres;Password=secret" \
+  --output "./db-schema" \
+  --profile
+```
 
 #### Syntax
 
@@ -1086,6 +1168,7 @@ pgschema-export watch \
 2. **Use `--exclude-schemas`** to skip system schemas you don't need
 3. **Export only needed object types** with `--exclude-<kind>`
 4. **Use connection pooling** in your connection string for parallel exports
+5. **Use `--profile`** to measure which phases are slow before optimizing
 
 ### Security Considerations
 
@@ -1119,6 +1202,20 @@ pgschema-export watch \
 ---
 
 ## Version History
+
+### 1.9.0
+- Added `diagram` command for Mermaid and Graphviz DOT ER diagrams
+- Added `--profile` global flag for per-phase performance summaries
+
+### 1.8.0
+- Added declarative `plan` and `apply` migration workflow
+- Added online DDL (`CONCURRENTLY`) rewriting for zero-downtime index changes
+- Added hazard warnings and lock/statement timeout configuration
+
+### 1.7.0
+- Added `drift` detection and `fingerprint` validation
+- Added migration history tracking
+- Added GitHub Actions drift workflow
 
 ### 1.6.0
 - Added `--schemas`/`--exclude-schemas` for customizable live-database diff
@@ -1161,6 +1258,6 @@ pgschema-export watch \
 ## Additional Resources
 
 - **README.md**: Project overview and quick start
-- **RELEASE_NOTES_1.6.0.md**: Detailed release notes for current version
+- **RELEASE_NOTES_1.9.0.md**: Detailed release notes for current version
 - **PostgreSQL Documentation**: https://www.postgresql.org/docs/
 - **Npgsql Documentation**: https://www.npgsql.org/doc/

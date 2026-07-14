@@ -1,0 +1,16 @@
+.git
+.gitignore
+.github
+*.md
+*.png
+*.svg
+*.mmd
+*.trx
+*.log
+*/bin/
+*/obj/
+*/node_modules/
+*/TestResults/
+.vs/
+.vscode/
+.idea/

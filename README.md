@@ -40,9 +40,10 @@ db-schema/
 - **Plan / Apply** — Terraform-style reviewable plan, then apply (or roll back) against a live database.
 - **Production-safe** — online DDL (`CONCURRENTLY`), lock/statement timeouts, hazard analysis of destructive operations.
 - **Drift & Fingerprint** — detect out-of-band changes vs the committed schema; deterministic SHA256 validation.
+- **ER Diagrams** — generate Mermaid `erDiagram` or Graphviz DOT from a live DB or exported schema.
 - **Watch** — auto-re-diff/export as the schema changes.
 - **CI/CD** — machine-readable JSON, meaningful exit codes, ready-to-use GitHub Action.
-- **DX** — `init` config scaffolding + validation, structured logging, `--verbose`/`--quiet`, progress reporting.
+- **DX** — `init` config scaffolding + validation, structured logging, `--verbose`/`--quiet`, progress reporting, `--profile` timing summary.
 
 **Supported objects:** tables (+ partitions), views (+ materialized), functions/procedures/aggregates,
 indexes, constraints, triggers, event triggers, rules, row-level policies, types
@@ -86,6 +87,7 @@ for all flags. Commands at a glance:
 | `plan` / `apply` | Reviewable plan, then apply/roll back on a live DB |
 | `drift` | Check a live DB against the committed schema |
 | `fingerprint` | Generate/verify a deterministic schema hash |
+| `diagram` | Generate an ER diagram (Mermaid or Graphviz DOT) |
 | `watch` | Re-diff/export automatically on changes |
 | `init` | Scaffold a config file |
 
@@ -202,6 +204,52 @@ independent of file ordering.
 
 ---
 
+### Generate an ER diagram
+
+Visualize the schema as a Mermaid `erDiagram` (renders in GitHub/GitLab Markdown)
+or as Graphviz DOT for publication-quality SVG/PNG:
+
+```bash
+# From a live database
+pgschema-export diagram \
+  --connection "Host=localhost;Database=mydb;Username=postgres;Password=123" \
+  --output schema.mmd
+
+# From an exported schema directory
+pgschema-export diagram \
+  --schema "./db-schema" \
+  --output schema.dot
+```
+
+Useful flags:
+
+```bash
+pgschema-export diagram --schema "./db-schema" --format mermaid
+pgschema-export diagram --connection "<conn>" --schemas "public" --output schema.gv
+```
+
+The renderer uses primary keys, unique constraints, and foreign keys to show
+key markers and relationship cardinality. The `dot` output can be rendered with:
+
+```bash
+dot -Tsvg schema.dot -o schema.svg
+```
+
+---
+
+### Profile performance
+
+Add `--profile` to any command to print a per-phase timing summary to stderr
+when the operation completes:
+
+```bash
+pgschema-export export --connection "<conn>" --output ./db-schema --profile
+```
+
+This is useful for finding slow phases in large databases or CI pipelines.
+
+---
+
 ### Production-safe migrations
 
 `migrate` supports zero-downtime and safety options:
@@ -269,14 +317,14 @@ schema-only (no data migration).
 
 ## Roadmap
 
-Shipped through **v1.8.0**: export, `pg_dump` split, schema diff, dependency-ordered
+Shipped through **v1.9.0**: export, `pg_dump` split, schema diff, dependency-ordered
 deploy, migration generation, live-to-live diff, broad object coverage, watch mode,
 HTML reports, parallel export, structured logging, advanced diff options, drift
-detection, schema fingerprints, and the declarative plan/apply workflow with online
-DDL and hazard warnings.
+detection, schema fingerprints, declarative plan/apply workflow with online DDL and
+hazard warnings, ER-diagram visualization (Mermaid and Graphviz DOT), and
+`--profile` performance summaries.
 
 **Next:**
-- **v1.9.0** — ER-diagram visualization, performance profiling, richer error messages.
 - **v2.0.0** — multi-database support (MySQL, SQLite, SQL Server), cloud integrations, AI-assisted migrations.
 
 <details>
@@ -297,10 +345,11 @@ DDL and hazard warnings.
 * v1.6.0  Advanced Diff Features — customizable/parallel live-db diff, `--ignore-comments`/`--ignore-whitespace`, context-aware line diffs, per-type statistics
 * v1.7.0  Safety & CI/CD — drift detection, schema fingerprint validation, migration history tracking, GitHub Action drift workflow
 * v1.8.0  Production Features — declarative plan/apply workflow, online DDL (concurrent indexes), hazard warnings, lock/statement timeout configuration
+* v1.9.0  Developer Experience — ER-diagram visualization (Mermaid/Graphviz DOT), performance profiling, `--profile` flag
 
 </details>
 
-Latest changes: [RELEASE_NOTES_1.8.0.md](RELEASE_NOTES_1.8.0.md).
+Latest changes: [RELEASE_NOTES_1.9.0.md](RELEASE_NOTES_1.9.0.md).
 
 ---
 

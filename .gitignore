@@ -11,3 +11,7 @@ obj/
 *.exe
 db-schema/
 publish/
+# Allow the integration test launch scripts to be tracked.
+!scripts/run-integration-tests.ps1
+!scripts/run-integration-tests.sh
+

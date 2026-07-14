@@ -4,6 +4,7 @@ using PgSchemaExporter.Cli.Diagnostics;
 using PgSchemaExporter.Core;
 using PgSchemaExporter.Core.Configuration;
 using PgSchemaExporter.Core.Diagnostics;
+using PgSchemaExporter.Core.Diagramming;
 using PgSchemaExporter.Core.Diff;
 using PgSchemaExporter.Core.Drift;
 using PgSchemaExporter.Core.Integrity;
@@ -15,7 +16,7 @@ using PgSchemaExporter.Core.Options;
 using PgSchemaExporter.Core.Output;
 using PgSchemaExporter.Core.Scripting;
 
-const string VersionString = "1.8.0";
+const string VersionString = "1.9.0";
 
 if (args.Length == 0 || args.Contains("--help") || args.Contains("-h"))
 {
@@ -29,12 +30,21 @@ if (args.Contains("--version") || args.Contains("-v"))
     return;
 }
 
-// Extract global verbosity flags before command-specific parsing.
+// Extract global flags before command-specific parsing.
 var verbosity = ResolveVerbosity(args);
-args = args.Where(a => a is not "--verbose" and not "--quiet").ToArray();
+var profile = args.Contains("--profile");
+args = args.Where(a => a is not "--verbose" and not "--quiet" and not "--profile").ToArray();
 
 IProgressReporter progress = new ConsoleProgressReporter(verbosity);
 ILogger logger = new ConsoleLogger(verbosity);
+
+// When profiling, wrap the reporter so per-phase timings can be summarized afterwards.
+TimingProgressReporter? timing = null;
+if (profile)
+{
+    timing = new TimingProgressReporter(progress);
+    progress = timing;
+}
 
 try
 {
@@ -376,6 +386,26 @@ try
         return;
     }
 
+    if (string.Equals(command, "diagram", StringComparison.OrdinalIgnoreCase))
+    {
+        var options = CliParser.ParseDiagramOptions(args.Skip(1).ToArray());
+
+        var generator = new SchemaDiagramGenerator();
+        var diagram = await generator.GenerateAsync(options, progress, logger);
+
+        if (!string.IsNullOrWhiteSpace(options.OutputFile))
+        {
+            await File.WriteAllTextAsync(options.OutputFile, diagram);
+            Console.WriteLine($"Diagram written to: {Path.GetFullPath(options.OutputFile)}");
+        }
+        else
+        {
+            Console.WriteLine(diagram);
+        }
+
+        return;
+    }
+
     Console.Error.WriteLine($"Unknown command: {command}");
     PrintHelp();
     Environment.ExitCode = 1;
@@ -397,6 +427,9 @@ catch (Exception ex)
 
     Environment.ExitCode = 1;
 }
+
+if (timing is not null)
+    Console.Error.WriteLine(timing.BuildSummary());
 
 static async Task<ExportOptions> ParseExportOptionsAsync(string[] args)
 {
@@ -720,7 +753,7 @@ static void PrintHazards(IEnumerable<(string Severity, string Category, string M
 static void PrintHelp()
 {
     Console.WriteLine("""
-PostgreSQL Git-Native Schema Exporter 1.8.0
+PostgreSQL Git-Native Schema Exporter 1.9.0
 
 Usage:
   pgschema-export init [--output "./pgschema-export.json"]
@@ -733,6 +766,8 @@ Usage:
   pgschema-export fingerprint --schema "./db-schema" [--output schema.fingerprint.json]
   pgschema-export plan --from "./old-schema" --to "./new-schema" --output plan.json
   pgschema-export apply --plan plan.json --connection "<connection-string>"
+  pgschema-export diagram --connection "<connection-string>" --output diagram.mmd
+  pgschema-export diagram --schema "./db-schema" --output schema.dot
 
 Commands:
   init         Create a pgschema-export.json config template
@@ -745,10 +780,12 @@ Commands:
   fingerprint  Compute (or verify) a SHA256 fingerprint of a schema directory
   plan         Generate a reviewable migration plan (declarative workflow)
   apply        Apply a migration plan to a live database
+  diagram      Generate an ER diagram (Mermaid or Graphviz DOT)
 
 Global options:
       --verbose          Print detailed per-object progress and debug logs (to stderr)
       --quiet            Suppress progress output; only errors are shown
+      --profile          Print per-phase timing summary to stderr on completion
       --version, -v      Show the installed version
       --help, -h         Show this help
 
@@ -845,6 +882,15 @@ Fingerprint options:
   -o, --output           Optional path to write the fingerprint manifest (JSON)
       --verify           Path to a fingerprint manifest to validate against.
                          Exit code 2 indicates the schema no longer matches.
+
+Diagram options:
+  -c, --connection       Live PostgreSQL connection string
+  -s, --schema           Exported schema directory (alternative to live DB)
+  -o, --output           Optional path to write the diagram file
+      --format           Output format: mermaid (default) or dot
+                         Inferred from the --output extension (.mmd/.dot) if omitted.
+      --schemas          Comma-separated schemas to read from the live DB. Default: public
+      --exclude-schemas  Comma-separated schemas to exclude from the live DB
 
 Split-dump options:
   -i, --input            Input SQL file created by pg_dump
