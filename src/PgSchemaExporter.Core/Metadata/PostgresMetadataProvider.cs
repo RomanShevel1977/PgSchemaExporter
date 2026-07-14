@@ -386,12 +386,26 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
         const string sql = @"
             SELECT n.nspname AS schema_name,
                    c.relname AS foreign_table_name,
-                   pg_get_viewdef(c.oid, true) AS definition
+                   'CREATE FOREIGN TABLE ' || quote_ident(n.nspname) || '.' || quote_ident(c.relname) || ' (' ||
+                   string_agg(
+                       quote_ident(a.attname) || ' ' || pg_catalog.format_type(a.atttypid, a.atttypmod),
+                       ', ' ORDER BY a.attnum) ||
+                   ') SERVER ' || quote_ident(s.srvname) ||
+                   COALESCE(' OPTIONS (' || (
+                       SELECT string_agg(
+                           quote_ident(split_part(o, '=', 1)) || ' ' || quote_literal(split_part(o, '=', 2)),
+                           ', ')
+                       FROM unnest(f.ftoptions) AS o
+                   ) || ')', '') AS definition
             FROM pg_class c
             JOIN pg_namespace n ON n.oid = c.relnamespace
+            JOIN pg_foreign_table f ON f.ftrelid = c.oid
+            JOIN pg_foreign_server s ON s.oid = f.ftserver
+            JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
             WHERE c.relkind = 'f'
               AND n.nspname = ANY(@schemas)
               AND NOT n.nspname = ANY(@excludeSchemas)
+            GROUP BY n.nspname, c.relname, s.srvname, f.ftoptions
             ORDER BY n.nspname, c.relname;";
 
         await using var command = new NpgsqlCommand(sql, connection);
@@ -406,7 +420,7 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
             {
                 Schema = reader.GetString(0),
                 Name = reader.GetString(1),
-                Definition = reader.GetString(2)
+                Definition = reader.IsDBNull(2) ? "" : reader.GetString(2)
             });
         }
 

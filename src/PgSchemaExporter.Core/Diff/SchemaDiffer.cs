@@ -228,6 +228,11 @@ public sealed class SchemaDiffer
         foreach (var file in Directory.EnumerateFiles(root, "*.sql", SearchOption.AllDirectories))
         {
             var relative = Path.GetRelativePath(root, file).Replace('\\', '/');
+
+            // Skip generated deployment artifacts that are not part of the schema state.
+            if (relative.Equals("deploy.sql", StringComparison.OrdinalIgnoreCase))
+                continue;
+
             map[relative] = file;
         }
 

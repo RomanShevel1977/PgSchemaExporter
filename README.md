@@ -325,7 +325,7 @@ hazard warnings, ER-diagram visualization (Mermaid and Graphviz DOT), and
 `--profile` performance summaries.
 
 **Next:**
-- **v2.0.0** — multi-database support (MySQL, SQLite, SQL Server), cloud integrations, AI-assisted migrations.
+- **v2.0.0** — Stabilization, improvement and performance.
 
 <details>
 <summary>Full release history</summary>
