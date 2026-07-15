@@ -39,7 +39,7 @@ public static class TableDefinitionParser
         if (openParen < 0)
             return null;
 
-        var qualifiedName = sql[afterTable..openParen].Trim();
+        var qualifiedName = SkipLeadingNoise(sql[afterTable..openParen].Trim());
         if (qualifiedName.Length == 0)
             return null;
 
@@ -191,6 +191,23 @@ public static class TableDefinitionParser
         }
 
         return results;
+    }
+
+    private static string SkipLeadingNoise(string text)
+    {
+        text = text.TrimStart();
+
+        while (true)
+        {
+            if (MatchesWordAt(text, 0, "IF NOT EXISTS"))
+                text = text["IF NOT EXISTS".Length..].TrimStart();
+            else if (MatchesWordAt(text, 0, "ONLY"))
+                text = text["ONLY".Length..].TrimStart();
+            else
+                break;
+        }
+
+        return text;
     }
 
     private static bool MatchesWordAt(string text, int index, string word)

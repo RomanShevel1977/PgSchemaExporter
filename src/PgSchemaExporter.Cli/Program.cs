@@ -427,9 +427,11 @@ catch (Exception ex)
 
     Environment.ExitCode = 1;
 }
-
-if (timing is not null)
-    Console.Error.WriteLine(timing.BuildSummary());
+finally
+{
+    if (timing is not null)
+        Console.Error.WriteLine(timing.BuildSummary());
+}
 
 static async Task<ExportOptions> ParseExportOptionsAsync(string[] args)
 {

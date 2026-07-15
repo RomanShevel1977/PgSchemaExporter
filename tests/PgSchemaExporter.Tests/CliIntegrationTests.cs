@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Text;
 using Npgsql;
 using PgSchemaExporter.Core.Scripting;
 using Testcontainers.PostgreSql;
@@ -337,6 +338,264 @@ CREATE OR REPLACE VIEW public.active_users AS SELECT id FROM public.users;
         Assert.True(File.Exists(Path.Combine(outputDir, "views", "public.active_users.sql")));
     }
 
+    [Fact]
+    public async Task WatchCommand_EmitsDiffOnFileChange()
+    {
+        var leftDir = Path.Combine(_tempRoot, "watch-left");
+        var rightDir = Path.Combine(_tempRoot, "watch-right");
+        Directory.CreateDirectory(leftDir);
+        Directory.CreateDirectory(rightDir);
+        Directory.CreateDirectory(Path.Combine(leftDir, "tables"));
+        Directory.CreateDirectory(Path.Combine(rightDir, "tables"));
+
+        await File.WriteAllTextAsync(Path.Combine(leftDir, "tables", "common.sql"), "CREATE TABLE common (id int);");
+        await File.WriteAllTextAsync(Path.Combine(rightDir, "tables", "common.sql"), "CREATE TABLE common (id int);");
+
+        var result = await RunWatch(
+            ["watch", "--left", leftDir, "--right", rightDir],
+            async () => await File.WriteAllTextAsync(Path.Combine(rightDir, "tables", "added.sql"), "CREATE TABLE added (id int);"));
+
+        Assert.Contains("tables/added.sql", result.Output);
+        Assert.Contains("Schema diff", result.Output);
+    }
+
+    [Fact]
+    public async Task VerboseFlag_PrintsProgress()
+    {
+        var schema = await CreateSchemaAsync();
+        var outputDir = Path.Combine(_tempRoot, "export-verbose");
+
+        var result = await RunCli(
+            "export",
+            "--connection", _connectionString,
+            "--output", outputDir,
+            "--schemas", schema,
+            "--include-tables",
+            "--include-schemas",
+            "--verbose");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("    [", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task QuietFlag_DoesNotPrintProgress()
+    {
+        var schema = await CreateSchemaAsync();
+        var outputDir = Path.Combine(_tempRoot, "export-quiet");
+
+        var result = await RunCli(
+            "export",
+            "--connection", _connectionString,
+            "--output", outputDir,
+            "--schemas", schema,
+            "--include-tables",
+            "--include-schemas",
+            "--quiet");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.DoesNotContain("==> ", result.Error);
+        Assert.DoesNotContain("    [", result.Error);
+    }
+
+    [Fact]
+    public async Task ProfileFlag_PrintsTimingSummary()
+    {
+        var schema = await CreateSchemaAsync();
+        var outputDir = Path.Combine(_tempRoot, "export-profile");
+
+        var result = await RunCli(
+            "export",
+            "--connection", _connectionString,
+            "--output", outputDir,
+            "--schemas", schema,
+            "--include-tables",
+            "--include-schemas",
+            "--quiet",
+            "--profile");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("Performance profile:", result.Error);
+        Assert.Contains("total", result.Error);
+    }
+
+    [Fact]
+    public async Task FingerprintCommand_VerifyMismatch_ReturnsExitCode2()
+    {
+        var exportDir = Path.Combine(_tempRoot, "fingerprint-mismatch");
+        Directory.CreateDirectory(Path.Combine(exportDir, "tables"));
+        await File.WriteAllTextAsync(Path.Combine(exportDir, "tables", "users.sql"), "CREATE TABLE users (id int);");
+        var fingerprintPath = Path.Combine(_tempRoot, "mismatch.fingerprint.json");
+
+        var computeResult = await RunCli("fingerprint", "--schema", exportDir, "--output", fingerprintPath);
+        Assert.Equal(0, computeResult.ExitCode);
+
+        await File.WriteAllTextAsync(Path.Combine(exportDir, "tables", "orders.sql"), "CREATE TABLE orders (id int);");
+
+        var verifyResult = await RunCli("fingerprint", "--schema", exportDir, "--verify", fingerprintPath);
+        Assert.Equal(2, verifyResult.ExitCode);
+        Assert.Contains("MISMATCH", verifyResult.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("orders.sql", verifyResult.Error);
+    }
+
+    [Fact]
+    public async Task PlanCommand_WithChanges_ReturnsExitCode2()
+    {
+        var fromDir = Path.Combine(_tempRoot, "plan-from-changes");
+        var toDir = Path.Combine(_tempRoot, "plan-to-changes");
+        Directory.CreateDirectory(Path.Combine(fromDir, "tables"));
+        Directory.CreateDirectory(Path.Combine(toDir, "tables"));
+
+        await File.WriteAllTextAsync(Path.Combine(fromDir, "tables", "users.sql"), "CREATE TABLE users (id int);");
+        await File.WriteAllTextAsync(Path.Combine(toDir, "tables", "users.sql"), "CREATE TABLE users (id int);");
+        await File.WriteAllTextAsync(Path.Combine(toDir, "tables", "orders.sql"), "CREATE TABLE orders (id int);");
+
+        var result = await RunCli("plan", "--from", fromDir, "--to", toDir);
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.Contains("Migration plan", result.Output);
+        Assert.Contains("orders", result.Output);
+    }
+
+    [Fact]
+    public async Task PlanCommand_NoChanges_ReturnsExitCode0()
+    {
+        var fromDir = Path.Combine(_tempRoot, "plan-from-same");
+        var toDir = Path.Combine(_tempRoot, "plan-to-same");
+        Directory.CreateDirectory(Path.Combine(fromDir, "tables"));
+        Directory.CreateDirectory(Path.Combine(toDir, "tables"));
+
+        await File.WriteAllTextAsync(Path.Combine(fromDir, "tables", "users.sql"), "CREATE TABLE users (id int);");
+        await File.WriteAllTextAsync(Path.Combine(toDir, "tables", "users.sql"), "CREATE TABLE users (id int);");
+
+        var result = await RunCli("plan", "--from", fromDir, "--to", toDir);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("No changes", result.Output);
+    }
+
+    [Fact]
+    public async Task DriftCommand_WritesJsonReport()
+    {
+        var schema = await CreateSchemaAsync();
+        var exportDir = Path.Combine(_tempRoot, "drift-json");
+        var reportPath = Path.Combine(_tempRoot, "drift.json");
+
+        var exportResult = await RunCli(
+            "export",
+            "--connection", _connectionString,
+            "--output", exportDir,
+            "--schemas", schema,
+            "--include-tables",
+            "--include-schemas");
+
+        Assert.Equal(0, exportResult.ExitCode);
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = $"ALTER TABLE {SqlIdentifier.Qualified(schema, "users")} ADD COLUMN email character varying(255);";
+        await cmd.ExecuteNonQueryAsync();
+
+        var result = await RunCli(
+            "drift",
+            "--schema", exportDir,
+            "--connection", _connectionString,
+            "--schemas", schema,
+            "--format", "json",
+            "--output", reportPath);
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.True(File.Exists(reportPath));
+        var content = await File.ReadAllTextAsync(reportPath);
+        Assert.Contains("\"hasDifferences\"", content);
+        Assert.Contains("\"added\"", content);
+    }
+
+    [Fact]
+    public async Task DriftCommand_WritesHtmlReport()
+    {
+        var schema = await CreateSchemaAsync();
+        var exportDir = Path.Combine(_tempRoot, "drift-html");
+        var reportPath = Path.Combine(_tempRoot, "drift.html");
+
+        var exportResult = await RunCli(
+            "export",
+            "--connection", _connectionString,
+            "--output", exportDir,
+            "--schemas", schema,
+            "--include-tables",
+            "--include-schemas");
+
+        Assert.Equal(0, exportResult.ExitCode);
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = $"ALTER TABLE {SqlIdentifier.Qualified(schema, "users")} ADD COLUMN email character varying(255);";
+        await cmd.ExecuteNonQueryAsync();
+
+        var result = await RunCli(
+            "drift",
+            "--schema", exportDir,
+            "--connection", _connectionString,
+            "--schemas", schema,
+            "--format", "html",
+            "--output", reportPath);
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.True(File.Exists(reportPath));
+        var content = await File.ReadAllTextAsync(reportPath);
+        Assert.Contains("<!DOCTYPE html>", content);
+        Assert.Contains("Schema diff report", content);
+    }
+
+    [Fact]
+    public async Task MigrateCommand_WarnHazards()
+    {
+        var fromDir = Path.Combine(_tempRoot, "migrate-from");
+        var toDir = Path.Combine(_tempRoot, "migrate-to");
+        var outputDir = Path.Combine(_tempRoot, "migrations-hazards");
+        Directory.CreateDirectory(Path.Combine(fromDir, "tables"));
+        await File.WriteAllTextAsync(Path.Combine(fromDir, "tables", "users.sql"), "CREATE TABLE users (id int);");
+        Directory.CreateDirectory(toDir);
+
+        var result = await RunCli(
+            "migrate",
+            "--from", fromDir,
+            "--to", toDir,
+            "--output", outputDir,
+            "--warn-hazards",
+            "--name", "drop_users");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("Hazards detected", result.Output);
+        Assert.Contains("TableDrop", result.Output);
+    }
+
+    [Fact]
+    public async Task MigrateCommand_Preview()
+    {
+        var fromDir = Path.Combine(_tempRoot, "migrate-preview-from");
+        var toDir = Path.Combine(_tempRoot, "migrate-preview-to");
+        Directory.CreateDirectory(Path.Combine(fromDir, "tables"));
+        Directory.CreateDirectory(Path.Combine(toDir, "tables"));
+        await File.WriteAllTextAsync(Path.Combine(fromDir, "tables", "users.sql"), "CREATE TABLE users (id int);");
+        await File.WriteAllTextAsync(Path.Combine(toDir, "tables", "users.sql"), "CREATE TABLE users (id int);");
+        await File.WriteAllTextAsync(Path.Combine(toDir, "tables", "orders.sql"), "CREATE TABLE orders (id int);");
+
+        var result = await RunCli(
+            "migrate",
+            "--from", fromDir,
+            "--to", toDir,
+            "--preview");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("CREATE TABLE", result.Output);
+        Assert.Contains("DROP TABLE", result.Output);
+        Assert.False(Directory.Exists(Path.Combine(_tempRoot, "migrations-preview")));
+    }
+
     private async Task<string> CreateSchemaAsync()
     {
         var schema = "s" + Guid.NewGuid().ToString("n")[..8];
@@ -372,6 +631,44 @@ CREATE OR REPLACE VIEW public.active_users AS SELECT id FROM public.users;
 
         var outputTask = process.StandardOutput.ReadToEndAsync();
         var errorTask = process.StandardError.ReadToEndAsync();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        await Task.WhenAll(outputTask, errorTask, process.WaitForExitAsync(cts.Token));
+
+        var output = await outputTask;
+        var error = await errorTask;
+
+        return new CliResult(process.ExitCode, output, error);
+    }
+
+    private async Task<CliResult> RunWatch(string[] args, Func<Task> triggerAction)
+    {
+        var dllPath = FindCliDll();
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            WorkingDirectory = _tempRoot,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        startInfo.ArgumentList.Add(dllPath);
+        foreach (var arg in args)
+            startInfo.ArgumentList.Add(arg);
+
+        using var process = new Process { StartInfo = startInfo };
+        process.Start();
+
+        var outputTask = process.StandardOutput.ReadToEndAsync();
+        var errorTask = process.StandardError.ReadToEndAsync();
+
+        await Task.Delay(TimeSpan.FromSeconds(1));
+        await triggerAction();
+        await Task.Delay(TimeSpan.FromSeconds(2));
+
+        process.Kill();
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
         await Task.WhenAll(outputTask, errorTask, process.WaitForExitAsync(cts.Token));

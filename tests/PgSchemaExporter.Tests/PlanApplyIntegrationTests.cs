@@ -258,6 +258,39 @@ public class PlanApplyIntegrationTests : IAsyncLifetime
         Assert.False(await IndexExistsAsync(schema, "users", "users_email_idx"));
     }
 
+    [Fact]
+    public async Task ApplyWorkflow_OnlineDdl_LeavesNonIndexStatementsInTransaction()
+    {
+        // Arrange
+        var (fromDir, toDir, schema) = await CreateFromToWithAddedColumnAsync();
+
+        var options = new MigrationOptions { FromDirectory = fromDir, ToDirectory = toDir, OnlineDdl = true };
+        var plan = new MigrationPlanner().CreatePlan(options);
+
+        // Assert: non-index (table/column) statements must not be rewritten to CONCURRENTLY
+        // and must remain inside the transaction.
+        var tableStatements = plan.Up.Where(s => s.Sql.Contains("ALTER TABLE", StringComparison.OrdinalIgnoreCase) ||
+                                                  s.Sql.Contains("CREATE TABLE", StringComparison.OrdinalIgnoreCase)).ToList();
+
+        Assert.NotEmpty(tableStatements);
+        Assert.All(tableStatements, s =>
+        {
+            Assert.DoesNotContain("CONCURRENTLY", s.Sql, StringComparison.OrdinalIgnoreCase);
+            Assert.False(s.RunsOutsideTransaction);
+        });
+
+        // Act: apply should still succeed
+        var applier = new MigrationApplier();
+        var result = await applier.ApplyAsync(plan, new MigrationApplier.ApplyOptions
+        {
+            ConnectionString = _connectionString,
+            Rollback = false
+        });
+
+        Assert.Equal(1, result.Executed);
+        Assert.True(await ColumnExistsAsync(schema, "users", "email"));
+    }
+
     private async Task<string> CreateSchemaAsync()
     {
         var schema = "s" + Guid.NewGuid().ToString("n")[..8];

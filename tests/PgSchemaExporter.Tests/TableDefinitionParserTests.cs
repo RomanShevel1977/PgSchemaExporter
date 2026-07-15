@@ -76,4 +76,127 @@ CREATE TABLE IF NOT EXISTS "public"."t" (
         Assert.NotNull(table);
         Assert.False(table!.IsParseable);
     }
+
+    [Theory]
+    [InlineData("CONSTRAINT pk PRIMARY KEY (\"id\")")]
+    [InlineData("UNIQUE (\"email\")")]
+    [InlineData("CHECK (\"id\">0)")]
+    [InlineData("FOREIGN KEY (\"id\") REFERENCES other(id)")]
+    [InlineData("EXCLUDE USING gist (\"id\" WITH =)")]
+    [InlineData("LIKE other_table")]
+    public void Parse_MarksInlineConstraintKeywordsAsNotParseable(string constraint)
+    {
+        var sql = $"""
+CREATE TABLE "public"."t" (
+    "id" integer NOT NULL,
+    {constraint}
+);
+""";
+
+        var table = TableDefinitionParser.Parse(sql);
+        Assert.NotNull(table);
+        Assert.False(table!.IsParseable);
+    }
+
+    [Fact]
+    public void Parse_OnlyKeyword_IsIgnored()
+    {
+        const string sql = """
+CREATE TABLE ONLY "public"."t" (
+    "id" integer NOT NULL
+);
+""";
+
+        var table = TableDefinitionParser.Parse(sql);
+        Assert.NotNull(table);
+        Assert.Equal("\"public\".\"t\"", table!.QualifiedName);
+        Assert.True(table.IsParseable);
+    }
+
+    [Fact]
+    public void Parse_CollateAndGeneratedClauses_AreCaptured()
+    {
+        const string sql = """
+CREATE TABLE "public"."t" (
+    "id" integer NOT NULL,
+    "name" text COLLATE "en_US" GENERATED ALWAYS AS (upper("name")) STORED
+);
+""";
+
+        var table = TableDefinitionParser.Parse(sql);
+        Assert.NotNull(table);
+        Assert.True(table!.IsParseable);
+
+        var name = table.Columns[1];
+        Assert.Equal("name", name.Name);
+        Assert.Equal("text", name.DataType);
+        Assert.Equal("\"en_US\"", name.Collation);
+        Assert.NotNull(name.Identity);
+        Assert.Contains("GENERATED ALWAYS", name.Identity);
+    }
+
+    [Fact]
+    public void Parse_NullableAndNotNullClauses_AreHandled()
+    {
+        const string sql = """
+CREATE TABLE "public"."t" (
+    "a" integer NOT NULL,
+    "b" integer NULL
+);
+""";
+
+        var table = TableDefinitionParser.Parse(sql);
+        Assert.NotNull(table);
+        Assert.True(table!.Columns[0].NotNull);
+        Assert.False(table.Columns[1].NotNull);
+    }
+
+    [Fact]
+    public void Parse_EscapedQuotesInIdentifier_AreUnquoted()
+    {
+        const string sql = """
+CREATE TABLE "public"."my""table" (
+    "my""id" integer NOT NULL
+);
+""";
+
+        var table = TableDefinitionParser.Parse(sql);
+        Assert.NotNull(table);
+        Assert.Equal("\"public\".\"my\"\"table\"", table!.QualifiedName);
+        Assert.Equal("my\"id", table.Columns[0].Name);
+    }
+
+    [Fact]
+    public void Parse_EmptyOrInvalidSql_ReturnsNull()
+    {
+        Assert.Null(TableDefinitionParser.Parse(""));
+        Assert.Null(TableDefinitionParser.Parse("   "));
+        Assert.Null(TableDefinitionParser.Parse("SELECT 1;"));
+    }
+
+    [Fact]
+    public void Parse_MissingTableName_ReturnsNull()
+    {
+        const string sql = """
+CREATE TABLE (
+    "id" integer
+);
+""";
+
+        Assert.Null(TableDefinitionParser.Parse(sql));
+    }
+
+    [Fact]
+    public void Parse_UnquotedColumnName_ReturnsNotParseable()
+    {
+        const string sql = """
+CREATE TABLE "public"."t" (
+    id integer
+);
+""";
+
+        var table = TableDefinitionParser.Parse(sql);
+        Assert.NotNull(table);
+        Assert.False(table!.IsParseable);
+    }
 }

@@ -168,6 +168,39 @@ public class DiffAdvancedIntegrationTests : IAsyncLifetime
         Assert.Contains(result.Changed, x => x.Contains("tables", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public async Task DiffAsync_WithLiveDbAndExcludeSchemas_ExcludesParallelRunsWithoutError()
+    {
+        var schema = "s" + Guid.NewGuid().ToString("n")[..8];
+        var otherSchema = "other" + Guid.NewGuid().ToString("n")[..8];
+        await ExecuteNonQueryAsync($"CREATE SCHEMA {SqlIdentifier.Quote(schema)};");
+        await ExecuteNonQueryAsync($"CREATE SCHEMA {SqlIdentifier.Quote(otherSchema)};");
+        await ExecuteNonQueryAsync($"CREATE TABLE {SqlIdentifier.Qualified(schema, "users")} ({SqlIdentifier.Quote("id")} integer);");
+        await ExecuteNonQueryAsync($"CREATE TABLE {SqlIdentifier.Qualified(otherSchema, "other_table")} ({SqlIdentifier.Quote("id")} integer);");
+
+        var baselineDir = await ExportDatabaseAsync(schema);
+
+        await ExecuteNonQueryAsync($"ALTER TABLE {SqlIdentifier.Qualified(schema, "users")} ADD COLUMN {SqlIdentifier.Quote("email")} character varying(255);");
+        await ExecuteNonQueryAsync($"ALTER TABLE {SqlIdentifier.Qualified(otherSchema, "other_table")} ADD COLUMN {SqlIdentifier.Quote("name")} character varying(255);");
+
+        var differ = new SchemaDiffer();
+        var result = await differ.DiffAsync(new SchemaDiffOptions
+        {
+            LeftDirectory = baselineDir,
+            RightConnectionString = _connectionString,
+            Schemas = [schema, otherSchema],
+            ExcludeSchemas = [otherSchema],
+            Parallel = true,
+            Format = DiffFormat.Text
+        }, NullProgressReporter.Instance, NullLogger.Instance);
+
+        Assert.True(result.HasDifferences);
+        Assert.Contains(result.Changed, x => x.Contains("tables", StringComparison.OrdinalIgnoreCase));
+        // The excluded schema should not be part of the diff.
+        Assert.DoesNotContain(result.Changed, x => x.Contains("other_table", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result.Added, x => x.Contains("other_table", StringComparison.OrdinalIgnoreCase));
+    }
+
     private async Task<string> ExportDatabaseAsync(string schema)
     {
         var outputDir = Path.Combine(_tempRoot, Guid.NewGuid().ToString("n"));

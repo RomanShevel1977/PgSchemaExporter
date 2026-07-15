@@ -102,4 +102,41 @@ public class HazardAnalyzerTests
 
         Assert.Equal(HazardCategory.TableDrop, Assert.Single(hazards).Category);
     }
+
+    [Fact]
+    public void Analyze_DropFunction_WithIsDestructive_FlagsObjectDrop()
+    {
+        var hazards = HazardAnalyzer.Analyze(new List<MigrationStatement>
+        {
+            new(MigrationObjectKind.Function, "DROP FUNCTION public.f();", isDestructive: true)
+        });
+
+        var hazard = Assert.Single(hazards);
+        Assert.Equal(HazardCategory.ObjectDrop, hazard.Category);
+        Assert.Equal(HazardSeverity.Medium, hazard.Severity);
+    }
+
+    [Fact]
+    public void Analyze_DestructiveNonDrop_FlagsDataLoss()
+    {
+        var hazards = HazardAnalyzer.Analyze(new List<MigrationStatement>
+        {
+            new(MigrationObjectKind.Table, "UPDATE public.users SET deleted = true;", isDestructive: true)
+        });
+
+        var hazard = Assert.Single(hazards);
+        Assert.Equal(HazardCategory.DataLoss, hazard.Category);
+        Assert.Equal(HazardSeverity.Medium, hazard.Severity);
+    }
+
+    [Fact]
+    public void Analyze_DropAnyWithoutDestructive_NoHazard()
+    {
+        var hazards = HazardAnalyzer.Analyze(new List<MigrationStatement>
+        {
+            new(MigrationObjectKind.Function, "DROP FUNCTION public.f();", isDestructive: false)
+        });
+
+        Assert.Empty(hazards);
+    }
 }
