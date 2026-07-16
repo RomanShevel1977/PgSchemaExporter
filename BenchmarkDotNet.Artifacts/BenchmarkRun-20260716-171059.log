@@ -1,0 +1,456 @@
+// Validating benchmarks:
+// ***** BenchmarkRunner: Start   *****
+// ***** Found 4 benchmark(s) in total *****
+// ***** Building 1 exe(s) in Parallel: Start   *****
+Unable to find .sln or .csproj file. Will use current directory D:\Projects\PgSchemaExporter to search for project file. If you don't use .sln file on purpose it should not be a problem.
+// start dotnet  restore /p:UseSharedCompilation=false /p:BuildInParallel=false /m:1 /p:Deterministic=true /p:Optimize=true in D:\Projects\PgSchemaExporter\tests\PgSchemaExporter.Benchmarks\bin\Release\net8.0\b31c8408-5726-423f-b2d2-5f988ce3c5cd
+// command took 1.74 sec and exited with 0
+// start dotnet  build -c Release --no-restore /p:UseSharedCompilation=false /p:BuildInParallel=false /m:1 /p:Deterministic=true /p:Optimize=true in D:\Projects\PgSchemaExporter\tests\PgSchemaExporter.Benchmarks\bin\Release\net8.0\b31c8408-5726-423f-b2d2-5f988ce3c5cd
+// command took 4.5 sec and exited with 0
+// ***** Done, took 00:00:06 (6.58 sec)   *****
+// Found 1 benchmarks:
+//   DeploymentPlanBuilderBenchmark.Build: ShortRun(IterationCount=3, LaunchCount=1, WarmupCount=3)
+
+Setup power plan (GUID: 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c FriendlyName: High performance)
+// **************************
+// Benchmark: DeploymentPlanBuilderBenchmark.Build: ShortRun(IterationCount=3, LaunchCount=1, WarmupCount=3)
+// *** Execute ***
+// Launch: 1 / 1
+// Execute: dotnet b31c8408-5726-423f-b2d2-5f988ce3c5cd.dll --anonymousPipes 2148 2444 --benchmarkName PgSchemaExporter.Benchmarks.DeploymentPlanBuilderBenchmark.Build --job ShortRun --benchmarkId 0 in D:\Projects\PgSchemaExporter\tests\PgSchemaExporter.Benchmarks\bin\Release\net8.0\b31c8408-5726-423f-b2d2-5f988ce3c5cd\bin\Release\net8.0
+// BeforeAnythingElse
+
+// Benchmark Process Environment Information:
+// BenchmarkDotNet v0.13.12
+// Runtime=.NET 8.0.28 (8.0.2826.26413), X64 RyuJIT AVX2
+// GC=Concurrent Workstation
+// HardwareIntrinsics=AVX2,AES,BMI1,BMI2,FMA,LZCNT,PCLMUL,POPCNT VectorSize=256
+// Job: ShortRun(IterationCount=3, LaunchCount=1, WarmupCount=3)
+
+OverheadJitting  1: 1 op, 312200.00 ns, 312.2000 us/op
+WorkloadJitting  1: 1 op, 6796600400.00 ns, 6.7966 s/op
+
+OverheadJitting  2: 1 op, 900.00 ns, 900.0000 ns/op
+WorkloadJitting  2: 1 op, 5722694500.00 ns, 5.7227 s/op
+
+WorkloadWarmup   1: 1 op, 5629007300.00 ns, 5.6290 s/op
+WorkloadWarmup   2: 1 op, 5621973900.00 ns, 5.6220 s/op
+WorkloadWarmup   3: 1 op, 5808757000.00 ns, 5.8088 s/op
+
+// BeforeActualRun
+WorkloadActual   1: 1 op, 5786280800.00 ns, 5.7863 s/op
+WorkloadActual   2: 1 op, 5771969900.00 ns, 5.7720 s/op
+WorkloadActual   3: 1 op, 5798358500.00 ns, 5.7984 s/op
+
+// AfterActualRun
+WorkloadResult   1: 1 op, 5786280800.00 ns, 5.7863 s/op
+WorkloadResult   2: 1 op, 5771969900.00 ns, 5.7720 s/op
+WorkloadResult   3: 1 op, 5798358500.00 ns, 5.7984 s/op
+// GC:  806 1 0 6741905592 1
+// Threading:  0 0 1
+
+// AfterAll
+// Benchmark Process 12304 has exited with code 0.
+
+Mean = 5.786 s, StdErr = 0.008 s (0.13%), N = 3, StdDev = 0.013 s
+Min = 5.772 s, Q1 = 5.779 s, Median = 5.786 s, Q3 = 5.792 s, Max = 5.798 s
+IQR = 0.013 s, LowerFence = 5.759 s, UpperFence = 5.812 s
+ConfidenceInterval = [5.545 s; 6.027 s] (CI 99.9%), Margin = 0.241 s (4.17% of Mean)
+Skewness = -0.06, Kurtosis = 0.67, MValue = 2
+
+// ** Remained 3 (75.0%) benchmark(s) to run. Estimated finish 2026-07-16 17:14 (0h 2m from now) **
+Successfully reverted power plan (GUID: 381b4222-f694-41f0-9685-ff5bb260df2e FriendlyName: Balanced)
+// ***** BenchmarkRunner: Finish  *****
+
+// * Export *
+  BenchmarkDotNet.Artifacts\results\PgSchemaExporter.Benchmarks.DeploymentPlanBuilderBenchmark-report.csv
+  BenchmarkDotNet.Artifacts\results\PgSchemaExporter.Benchmarks.DeploymentPlanBuilderBenchmark-report-github.md
+  BenchmarkDotNet.Artifacts\results\PgSchemaExporter.Benchmarks.DeploymentPlanBuilderBenchmark-report.html
+
+// * Detailed results *
+DeploymentPlanBuilderBenchmark.Build: ShortRun(IterationCount=3, LaunchCount=1, WarmupCount=3)
+Runtime = .NET 8.0.28 (8.0.2826.26413), X64 RyuJIT AVX2; GC = Concurrent Workstation
+Mean = 5.786 s, StdErr = 0.008 s (0.13%), N = 3, StdDev = 0.013 s
+Min = 5.772 s, Q1 = 5.779 s, Median = 5.786 s, Q3 = 5.792 s, Max = 5.798 s
+IQR = 0.013 s, LowerFence = 5.759 s, UpperFence = 5.812 s
+ConfidenceInterval = [5.545 s; 6.027 s] (CI 99.9%), Margin = 0.241 s (4.17% of Mean)
+Skewness = -0.06, Kurtosis = 0.67, MValue = 2
+-------------------- Histogram --------------------
+[5.760 s ; 5.810 s) | @@@
+---------------------------------------------------
+
+// * Summary *
+
+BenchmarkDotNet v0.13.12, Windows 11 (10.0.26100.8875)
+Intel Core i9-9900K CPU 3.60GHz (Coffee Lake), 1 CPU, 16 logical and 8 physical cores
+.NET SDK 10.0.301
+  [Host]   : .NET 8.0.28 (8.0.2826.26413), X64 RyuJIT AVX2
+  ShortRun : .NET 8.0.28 (8.0.2826.26413), X64 RyuJIT AVX2
+
+Job=ShortRun  IterationCount=3  LaunchCount=1  
+WarmupCount=3  
+
+| Method | Mean    | Error    | StdDev   | Gen0        | Gen1      | Allocated |
+|------- |--------:|---------:|---------:|------------:|----------:|----------:|
+| Build  | 5.786 s | 0.2410 s | 0.0132 s | 806000.0000 | 1000.0000 |   6.28 GB |
+
+// * Legends *
+  Mean      : Arithmetic mean of all measurements
+  Error     : Half of 99.9% confidence interval
+  StdDev    : Standard deviation of all measurements
+  Gen0      : GC Generation 0 collects per 1000 operations
+  Gen1      : GC Generation 1 collects per 1000 operations
+  Allocated : Allocated memory per single operation (managed only, inclusive, 1KB = 1024B)
+  1 s       : 1 Second (1 sec)
+
+// * Diagnostic Output - MemoryDiagnoser *
+
+
+// ***** BenchmarkRunner: End *****
+Run time: 00:00:54 (54.69 sec), executed benchmarks: 1
+
+// Found 1 benchmarks:
+//   MigrationGeneratorBenchmark.Generate: ShortRun(IterationCount=3, LaunchCount=1, WarmupCount=3)
+
+Setup power plan (GUID: 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c FriendlyName: High performance)
+// **************************
+// Benchmark: MigrationGeneratorBenchmark.Generate: ShortRun(IterationCount=3, LaunchCount=1, WarmupCount=3)
+// *** Execute ***
+// Launch: 1 / 1
+// Execute: dotnet b31c8408-5726-423f-b2d2-5f988ce3c5cd.dll --anonymousPipes 2008 2012 --benchmarkName PgSchemaExporter.Benchmarks.MigrationGeneratorBenchmark.Generate --job ShortRun --benchmarkId 1 in D:\Projects\PgSchemaExporter\tests\PgSchemaExporter.Benchmarks\bin\Release\net8.0\b31c8408-5726-423f-b2d2-5f988ce3c5cd\bin\Release\net8.0
+// BeforeAnythingElse
+
+// Benchmark Process Environment Information:
+// BenchmarkDotNet v0.13.12
+// Runtime=.NET 8.0.28 (8.0.2826.26413), X64 RyuJIT AVX2
+// GC=Concurrent Workstation
+// HardwareIntrinsics=AVX2,AES,BMI1,BMI2,FMA,LZCNT,PCLMUL,POPCNT VectorSize=256
+// Job: ShortRun(IterationCount=3, LaunchCount=1, WarmupCount=3)
+
+OverheadJitting  1: 1 op, 242700.00 ns, 242.7000 us/op
+WorkloadJitting  1: 1 op, 61670700.00 ns, 61.6707 ms/op
+
+WorkloadPilot    1: 2 op, 100024600.00 ns, 50.0123 ms/op
+WorkloadPilot    2: 3 op, 153550600.00 ns, 51.1835 ms/op
+WorkloadPilot    3: 4 op, 201711600.00 ns, 50.4279 ms/op
+WorkloadPilot    4: 5 op, 253459900.00 ns, 50.6920 ms/op
+WorkloadPilot    5: 6 op, 313849300.00 ns, 52.3082 ms/op
+WorkloadPilot    6: 7 op, 323519800.00 ns, 46.2171 ms/op
+WorkloadPilot    7: 8 op, 365809400.00 ns, 45.7262 ms/op
+WorkloadPilot    8: 9 op, 416973300.00 ns, 46.3304 ms/op
+WorkloadPilot    9: 10 op, 441520600.00 ns, 44.1521 ms/op
+WorkloadPilot   10: 11 op, 481647600.00 ns, 43.7861 ms/op
+WorkloadPilot   11: 12 op, 527433500.00 ns, 43.9528 ms/op
+
+WorkloadWarmup   1: 12 op, 514966500.00 ns, 42.9139 ms/op
+WorkloadWarmup   2: 12 op, 532501100.00 ns, 44.3751 ms/op
+WorkloadWarmup   3: 12 op, 531432100.00 ns, 44.2860 ms/op
+
+// BeforeActualRun
+WorkloadActual   1: 12 op, 531684700.00 ns, 44.3071 ms/op
+WorkloadActual   2: 12 op, 521537900.00 ns, 43.4615 ms/op
+WorkloadActual   3: 12 op, 531664200.00 ns, 44.3054 ms/op
+
+// AfterActualRun
+WorkloadResult   1: 12 op, 531684700.00 ns, 44.3071 ms/op
+WorkloadResult   2: 12 op, 521537900.00 ns, 43.4615 ms/op
+WorkloadResult   3: 12 op, 531664200.00 ns, 44.3054 ms/op
+// GC:  4 1 0 40645344 12
+// Threading:  0 0 12
+
+// AfterAll
+// Benchmark Process 1284 has exited with code 0.
+
+Mean = 44.025 ms, StdErr = 0.282 ms (0.64%), N = 3, StdDev = 0.488 ms
+Min = 43.461 ms, Q1 = 43.883 ms, Median = 44.305 ms, Q3 = 44.306 ms, Max = 44.307 ms
+IQR = 0.423 ms, LowerFence = 43.249 ms, UpperFence = 44.940 ms
+ConfidenceInterval = [35.127 ms; 52.922 ms] (CI 99.9%), Margin = 8.897 ms (20.21% of Mean)
+Skewness = -0.38, Kurtosis = 0.67, MValue = 2
+
+// ** Remained 2 (50.0%) benchmark(s) to run. Estimated finish 2026-07-16 17:13 (0h 1m from now) **
+Successfully reverted power plan (GUID: 381b4222-f694-41f0-9685-ff5bb260df2e FriendlyName: Balanced)
+// ***** BenchmarkRunner: Finish  *****
+
+// * Export *
+  BenchmarkDotNet.Artifacts\results\PgSchemaExporter.Benchmarks.MigrationGeneratorBenchmark-report.csv
+  BenchmarkDotNet.Artifacts\results\PgSchemaExporter.Benchmarks.MigrationGeneratorBenchmark-report-github.md
+  BenchmarkDotNet.Artifacts\results\PgSchemaExporter.Benchmarks.MigrationGeneratorBenchmark-report.html
+
+// * Detailed results *
+MigrationGeneratorBenchmark.Generate: ShortRun(IterationCount=3, LaunchCount=1, WarmupCount=3)
+Runtime = .NET 8.0.28 (8.0.2826.26413), X64 RyuJIT AVX2; GC = Concurrent Workstation
+Mean = 44.025 ms, StdErr = 0.282 ms (0.64%), N = 3, StdDev = 0.488 ms
+Min = 43.461 ms, Q1 = 43.883 ms, Median = 44.305 ms, Q3 = 44.306 ms, Max = 44.307 ms
+IQR = 0.423 ms, LowerFence = 43.249 ms, UpperFence = 44.940 ms
+ConfidenceInterval = [35.127 ms; 52.922 ms] (CI 99.9%), Margin = 8.897 ms (20.21% of Mean)
+Skewness = -0.38, Kurtosis = 0.67, MValue = 2
+-------------------- Histogram --------------------
+[43.440 ms ; 44.328 ms) | @@@
+---------------------------------------------------
+
+// * Summary *
+
+BenchmarkDotNet v0.13.12, Windows 11 (10.0.26100.8875)
+Intel Core i9-9900K CPU 3.60GHz (Coffee Lake), 1 CPU, 16 logical and 8 physical cores
+.NET SDK 10.0.301
+  [Host]   : .NET 8.0.28 (8.0.2826.26413), X64 RyuJIT AVX2
+  ShortRun : .NET 8.0.28 (8.0.2826.26413), X64 RyuJIT AVX2
+
+Job=ShortRun  IterationCount=3  LaunchCount=1  
+WarmupCount=3  
+
+| Method   | Mean     | Error    | StdDev   | Gen0     | Gen1    | Allocated |
+|--------- |---------:|---------:|---------:|---------:|--------:|----------:|
+| Generate | 44.02 ms | 8.897 ms | 0.488 ms | 333.3333 | 83.3333 |   3.23 MB |
+
+// * Legends *
+  Mean      : Arithmetic mean of all measurements
+  Error     : Half of 99.9% confidence interval
+  StdDev    : Standard deviation of all measurements
+  Gen0      : GC Generation 0 collects per 1000 operations
+  Gen1      : GC Generation 1 collects per 1000 operations
+  Allocated : Allocated memory per single operation (managed only, inclusive, 1KB = 1024B)
+  1 ms      : 1 Millisecond (0.001 sec)
+
+// * Diagnostic Output - MemoryDiagnoser *
+
+
+// ***** BenchmarkRunner: End *****
+Run time: 00:00:08 (8.19 sec), executed benchmarks: 1
+
+// Found 1 benchmarks:
+//   SchemaFingerprintBenchmark.Compute: ShortRun(IterationCount=3, LaunchCount=1, WarmupCount=3)
+
+Setup power plan (GUID: 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c FriendlyName: High performance)
+// **************************
+// Benchmark: SchemaFingerprintBenchmark.Compute: ShortRun(IterationCount=3, LaunchCount=1, WarmupCount=3)
+// *** Execute ***
+// Launch: 1 / 1
+// Execute: dotnet b31c8408-5726-423f-b2d2-5f988ce3c5cd.dll --anonymousPipes 1984 2016 --benchmarkName PgSchemaExporter.Benchmarks.SchemaFingerprintBenchmark.Compute --job ShortRun --benchmarkId 2 in D:\Projects\PgSchemaExporter\tests\PgSchemaExporter.Benchmarks\bin\Release\net8.0\b31c8408-5726-423f-b2d2-5f988ce3c5cd\bin\Release\net8.0
+// BeforeAnythingElse
+
+// Benchmark Process Environment Information:
+// BenchmarkDotNet v0.13.12
+// Runtime=.NET 8.0.28 (8.0.2826.26413), X64 RyuJIT AVX2
+// GC=Concurrent Workstation
+// HardwareIntrinsics=AVX2,AES,BMI1,BMI2,FMA,LZCNT,PCLMUL,POPCNT VectorSize=256
+// Job: ShortRun(IterationCount=3, LaunchCount=1, WarmupCount=3)
+
+OverheadJitting  1: 1 op, 230600.00 ns, 230.6000 us/op
+WorkloadJitting  1: 1 op, 243308700.00 ns, 243.3087 ms/op
+
+WorkloadPilot    1: 2 op, 432420200.00 ns, 216.2101 ms/op
+WorkloadPilot    2: 3 op, 607229800.00 ns, 202.4099 ms/op
+
+WorkloadWarmup   1: 3 op, 575830300.00 ns, 191.9434 ms/op
+WorkloadWarmup   2: 3 op, 606524300.00 ns, 202.1748 ms/op
+WorkloadWarmup   3: 3 op, 575272500.00 ns, 191.7575 ms/op
+
+// BeforeActualRun
+WorkloadActual   1: 3 op, 566162500.00 ns, 188.7208 ms/op
+WorkloadActual   2: 3 op, 590861700.00 ns, 196.9539 ms/op
+WorkloadActual   3: 3 op, 581757200.00 ns, 193.9191 ms/op
+
+// AfterActualRun
+WorkloadResult   1: 3 op, 566162500.00 ns, 188.7208 ms/op
+WorkloadResult   2: 3 op, 590861700.00 ns, 196.9539 ms/op
+WorkloadResult   3: 3 op, 581757200.00 ns, 193.9191 ms/op
+// GC:  3 2 0 29312648 3
+// Threading:  0 0 3
+
+// AfterAll
+// Benchmark Process 456 has exited with code 0.
+
+Mean = 193.198 ms, StdErr = 2.404 ms (1.24%), N = 3, StdDev = 4.164 ms
+Min = 188.721 ms, Q1 = 191.320 ms, Median = 193.919 ms, Q3 = 195.436 ms, Max = 196.954 ms
+IQR = 4.117 ms, LowerFence = 185.145 ms, UpperFence = 201.611 ms
+ConfidenceInterval = [117.238 ms; 269.158 ms] (CI 99.9%), Margin = 75.960 ms (39.32% of Mean)
+Skewness = -0.17, Kurtosis = 0.67, MValue = 2
+
+// ** Remained 1 (25.0%) benchmark(s) to run. Estimated finish 2026-07-16 17:12 (0h 0m from now) **
+Successfully reverted power plan (GUID: 381b4222-f694-41f0-9685-ff5bb260df2e FriendlyName: Balanced)
+// ***** BenchmarkRunner: Finish  *****
+
+// * Export *
+  BenchmarkDotNet.Artifacts\results\PgSchemaExporter.Benchmarks.SchemaFingerprintBenchmark-report.csv
+  BenchmarkDotNet.Artifacts\results\PgSchemaExporter.Benchmarks.SchemaFingerprintBenchmark-report-github.md
+  BenchmarkDotNet.Artifacts\results\PgSchemaExporter.Benchmarks.SchemaFingerprintBenchmark-report.html
+
+// * Detailed results *
+SchemaFingerprintBenchmark.Compute: ShortRun(IterationCount=3, LaunchCount=1, WarmupCount=3)
+Runtime = .NET 8.0.28 (8.0.2826.26413), X64 RyuJIT AVX2; GC = Concurrent Workstation
+Mean = 193.198 ms, StdErr = 2.404 ms (1.24%), N = 3, StdDev = 4.164 ms
+Min = 188.721 ms, Q1 = 191.320 ms, Median = 193.919 ms, Q3 = 195.436 ms, Max = 196.954 ms
+IQR = 4.117 ms, LowerFence = 185.145 ms, UpperFence = 201.611 ms
+ConfidenceInterval = [117.238 ms; 269.158 ms] (CI 99.9%), Margin = 75.960 ms (39.32% of Mean)
+Skewness = -0.17, Kurtosis = 0.67, MValue = 2
+-------------------- Histogram --------------------
+[184.932 ms ; 191.647 ms) | @
+[191.647 ms ; 199.226 ms) | @@
+---------------------------------------------------
+
+// * Summary *
+
+BenchmarkDotNet v0.13.12, Windows 11 (10.0.26100.8875)
+Intel Core i9-9900K CPU 3.60GHz (Coffee Lake), 1 CPU, 16 logical and 8 physical cores
+.NET SDK 10.0.301
+  [Host]   : .NET 8.0.28 (8.0.2826.26413), X64 RyuJIT AVX2
+  ShortRun : .NET 8.0.28 (8.0.2826.26413), X64 RyuJIT AVX2
+
+Job=ShortRun  IterationCount=3  LaunchCount=1  
+WarmupCount=3  
+
+| Method  | Mean     | Error    | StdDev  | Gen0      | Gen1     | Allocated |
+|-------- |---------:|---------:|--------:|----------:|---------:|----------:|
+| Compute | 193.2 ms | 75.96 ms | 4.16 ms | 1000.0000 | 666.6667 |   9.32 MB |
+
+// * Legends *
+  Mean      : Arithmetic mean of all measurements
+  Error     : Half of 99.9% confidence interval
+  StdDev    : Standard deviation of all measurements
+  Gen0      : GC Generation 0 collects per 1000 operations
+  Gen1      : GC Generation 1 collects per 1000 operations
+  Allocated : Allocated memory per single operation (managed only, inclusive, 1KB = 1024B)
+  1 ms      : 1 Millisecond (0.001 sec)
+
+// * Diagnostic Output - MemoryDiagnoser *
+
+
+// ***** BenchmarkRunner: End *****
+Run time: 00:00:06 (6.53 sec), executed benchmarks: 1
+
+// Found 1 benchmarks:
+//   SqlStatementSplitterBenchmark.Split: ShortRun(IterationCount=3, LaunchCount=1, WarmupCount=3)
+
+Setup power plan (GUID: 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c FriendlyName: High performance)
+// **************************
+// Benchmark: SqlStatementSplitterBenchmark.Split: ShortRun(IterationCount=3, LaunchCount=1, WarmupCount=3)
+// *** Execute ***
+// Launch: 1 / 1
+// Execute: dotnet b31c8408-5726-423f-b2d2-5f988ce3c5cd.dll --anonymousPipes 1940 1944 --benchmarkName PgSchemaExporter.Benchmarks.SqlStatementSplitterBenchmark.Split --job ShortRun --benchmarkId 3 in D:\Projects\PgSchemaExporter\tests\PgSchemaExporter.Benchmarks\bin\Release\net8.0\b31c8408-5726-423f-b2d2-5f988ce3c5cd\bin\Release\net8.0
+// BeforeAnythingElse
+
+// Benchmark Process Environment Information:
+// BenchmarkDotNet v0.13.12
+// Runtime=.NET 8.0.28 (8.0.2826.26413), X64 RyuJIT AVX2
+// GC=Concurrent Workstation
+// HardwareIntrinsics=AVX2,AES,BMI1,BMI2,FMA,LZCNT,PCLMUL,POPCNT VectorSize=256
+// Job: ShortRun(IterationCount=3, LaunchCount=1, WarmupCount=3)
+
+OverheadJitting  1: 1 op, 244000.00 ns, 244.0000 us/op
+WorkloadJitting  1: 1 op, 9202800.00 ns, 9.2028 ms/op
+
+OverheadJitting  2: 16 op, 453600.00 ns, 28.3500 us/op
+WorkloadJitting  2: 16 op, 106244500.00 ns, 6.6403 ms/op
+
+WorkloadPilot    1: 16 op, 86837400.00 ns, 5.4273 ms/op
+WorkloadPilot    2: 32 op, 181580500.00 ns, 5.6744 ms/op
+WorkloadPilot    3: 64 op, 406300400.00 ns, 6.3484 ms/op
+WorkloadPilot    4: 128 op, 762183900.00 ns, 5.9546 ms/op
+
+OverheadWarmup   1: 128 op, 1900.00 ns, 14.8438 ns/op
+OverheadWarmup   2: 128 op, 1100.00 ns, 8.5938 ns/op
+OverheadWarmup   3: 128 op, 1200.00 ns, 9.3750 ns/op
+OverheadWarmup   4: 128 op, 1200.00 ns, 9.3750 ns/op
+OverheadWarmup   5: 128 op, 900.00 ns, 7.0312 ns/op
+OverheadWarmup   6: 128 op, 1100.00 ns, 8.5938 ns/op
+
+OverheadActual   1: 128 op, 1800.00 ns, 14.0625 ns/op
+OverheadActual   2: 128 op, 1700.00 ns, 13.2812 ns/op
+OverheadActual   3: 128 op, 1700.00 ns, 13.2812 ns/op
+OverheadActual   4: 128 op, 1700.00 ns, 13.2812 ns/op
+OverheadActual   5: 128 op, 1300.00 ns, 10.1562 ns/op
+OverheadActual   6: 128 op, 1200.00 ns, 9.3750 ns/op
+OverheadActual   7: 128 op, 1300.00 ns, 10.1562 ns/op
+OverheadActual   8: 128 op, 1200.00 ns, 9.3750 ns/op
+OverheadActual   9: 128 op, 1000.00 ns, 7.8125 ns/op
+OverheadActual  10: 128 op, 1000.00 ns, 7.8125 ns/op
+OverheadActual  11: 128 op, 1300.00 ns, 10.1562 ns/op
+OverheadActual  12: 128 op, 1300.00 ns, 10.1562 ns/op
+OverheadActual  13: 128 op, 1100.00 ns, 8.5938 ns/op
+OverheadActual  14: 128 op, 1100.00 ns, 8.5938 ns/op
+OverheadActual  15: 128 op, 1200.00 ns, 9.3750 ns/op
+OverheadActual  16: 128 op, 1100.00 ns, 8.5938 ns/op
+OverheadActual  17: 128 op, 3100.00 ns, 24.2188 ns/op
+OverheadActual  18: 128 op, 1700.00 ns, 13.2812 ns/op
+OverheadActual  19: 128 op, 1300.00 ns, 10.1562 ns/op
+OverheadActual  20: 128 op, 1100.00 ns, 8.5938 ns/op
+
+WorkloadWarmup   1: 128 op, 791234100.00 ns, 6.1815 ms/op
+WorkloadWarmup   2: 128 op, 760779200.00 ns, 5.9436 ms/op
+WorkloadWarmup   3: 128 op, 693735900.00 ns, 5.4198 ms/op
+
+// BeforeActualRun
+WorkloadActual   1: 128 op, 717609300.00 ns, 5.6063 ms/op
+WorkloadActual   2: 128 op, 717121700.00 ns, 5.6025 ms/op
+WorkloadActual   3: 128 op, 712314900.00 ns, 5.5650 ms/op
+
+// AfterActualRun
+WorkloadResult   1: 128 op, 717608000.00 ns, 5.6063 ms/op
+WorkloadResult   2: 128 op, 717120400.00 ns, 5.6025 ms/op
+WorkloadResult   3: 128 op, 712313600.00 ns, 5.5649 ms/op
+// GC:  70 62 0 593020304 128
+// Threading:  0 0 128
+
+// AfterAll
+// Benchmark Process 18092 has exited with code 0.
+
+Mean = 5.591 ms, StdErr = 0.013 ms (0.24%), N = 3, StdDev = 0.023 ms
+Min = 5.565 ms, Q1 = 5.584 ms, Median = 5.603 ms, Q3 = 5.604 ms, Max = 5.606 ms
+IQR = 0.021 ms, LowerFence = 5.553 ms, UpperFence = 5.635 ms
+ConfidenceInterval = [5.174 ms; 6.008 ms] (CI 99.9%), Margin = 0.417 ms (7.46% of Mean)
+Skewness = -0.37, Kurtosis = 0.67, MValue = 2
+
+// ** Remained 0 (0.0%) benchmark(s) to run. Estimated finish 2026-07-16 17:12 (0h 0m from now) **
+Successfully reverted power plan (GUID: 381b4222-f694-41f0-9685-ff5bb260df2e FriendlyName: Balanced)
+// ***** BenchmarkRunner: Finish  *****
+
+// * Export *
+  BenchmarkDotNet.Artifacts\results\PgSchemaExporter.Benchmarks.SqlStatementSplitterBenchmark-report.csv
+  BenchmarkDotNet.Artifacts\results\PgSchemaExporter.Benchmarks.SqlStatementSplitterBenchmark-report-github.md
+  BenchmarkDotNet.Artifacts\results\PgSchemaExporter.Benchmarks.SqlStatementSplitterBenchmark-report.html
+
+// * Detailed results *
+SqlStatementSplitterBenchmark.Split: ShortRun(IterationCount=3, LaunchCount=1, WarmupCount=3)
+Runtime = .NET 8.0.28 (8.0.2826.26413), X64 RyuJIT AVX2; GC = Concurrent Workstation
+Mean = 5.591 ms, StdErr = 0.013 ms (0.24%), N = 3, StdDev = 0.023 ms
+Min = 5.565 ms, Q1 = 5.584 ms, Median = 5.603 ms, Q3 = 5.604 ms, Max = 5.606 ms
+IQR = 0.021 ms, LowerFence = 5.553 ms, UpperFence = 5.635 ms
+ConfidenceInterval = [5.174 ms; 6.008 ms] (CI 99.9%), Margin = 0.417 ms (7.46% of Mean)
+Skewness = -0.37, Kurtosis = 0.67, MValue = 2
+-------------------- Histogram --------------------
+[5.565 ms ; 5.606 ms) | @@@
+---------------------------------------------------
+
+// * Summary *
+
+BenchmarkDotNet v0.13.12, Windows 11 (10.0.26100.8875)
+Intel Core i9-9900K CPU 3.60GHz (Coffee Lake), 1 CPU, 16 logical and 8 physical cores
+.NET SDK 10.0.301
+  [Host]   : .NET 8.0.28 (8.0.2826.26413), X64 RyuJIT AVX2
+  ShortRun : .NET 8.0.28 (8.0.2826.26413), X64 RyuJIT AVX2
+
+Job=ShortRun  IterationCount=3  LaunchCount=1  
+WarmupCount=3  
+
+| Method | Mean     | Error     | StdDev    | Gen0     | Gen1     | Allocated |
+|------- |---------:|----------:|----------:|---------:|---------:|----------:|
+| Split  | 5.591 ms | 0.4171 ms | 0.0229 ms | 546.8750 | 484.3750 |   4.42 MB |
+
+// * Legends *
+  Mean      : Arithmetic mean of all measurements
+  Error     : Half of 99.9% confidence interval
+  StdDev    : Standard deviation of all measurements
+  Gen0      : GC Generation 0 collects per 1000 operations
+  Gen1      : GC Generation 1 collects per 1000 operations
+  Allocated : Allocated memory per single operation (managed only, inclusive, 1KB = 1024B)
+  1 ms      : 1 Millisecond (0.001 sec)
+
+// * Diagnostic Output - MemoryDiagnoser *
+
+
+// ***** BenchmarkRunner: End *****
+Run time: 00:00:07 (7.27 sec), executed benchmarks: 1
+
+Global total time: 00:01:23 (83.87 sec), executed benchmarks: 4
+// * Artifacts cleanup *
+Artifacts cleanup is finished

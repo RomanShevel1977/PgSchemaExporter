@@ -1,4 +1,5 @@
 using System.Text;
+using PgSchemaExporter.Core.Scripting;
 
 namespace PgSchemaExporter.Core.Migration;
 
@@ -43,12 +44,12 @@ public static class TableDefinitionParser
         if (qualifiedName.Length == 0)
             return null;
 
-        var closeParen = FindMatchingParen(sql, openParen);
+        var closeParen = SqlTokenizer.FindMatchingParen(sql, openParen);
         if (closeParen < 0)
             return null;
 
         var body = sql[(openParen + 1)..closeParen];
-        var entries = SplitTopLevel(body);
+        var entries = SqlTokenizer.SplitTopLevel(body);
 
         var columns = new List<ParsedColumn>();
         foreach (var entry in entries)
@@ -273,90 +274,6 @@ public static class TableDefinitionParser
             return quoted[1..^1].Replace("\"\"", "\"");
 
         return quoted;
-    }
-
-    private static int FindMatchingParen(string text, int openIndex)
-    {
-        var depth = 0;
-        var inSingle = false;
-        var inDouble = false;
-
-        for (var i = openIndex; i < text.Length; i++)
-        {
-            var c = text[i];
-
-            if (inSingle)
-            {
-                if (c == '\'') inSingle = false;
-                continue;
-            }
-
-            if (inDouble)
-            {
-                if (c == '"') inDouble = false;
-                continue;
-            }
-
-            switch (c)
-            {
-                case '\'': inSingle = true; break;
-                case '"': inDouble = true; break;
-                case '(': depth++; break;
-                case ')':
-                    depth--;
-                    if (depth == 0)
-                        return i;
-                    break;
-            }
-        }
-
-        return -1;
-    }
-
-    private static List<string> SplitTopLevel(string body)
-    {
-        var entries = new List<string>();
-        var current = new StringBuilder();
-        var depth = 0;
-        var inSingle = false;
-        var inDouble = false;
-
-        foreach (var c in body)
-        {
-            if (inSingle)
-            {
-                current.Append(c);
-                if (c == '\'') inSingle = false;
-                continue;
-            }
-
-            if (inDouble)
-            {
-                current.Append(c);
-                if (c == '"') inDouble = false;
-                continue;
-            }
-
-            switch (c)
-            {
-                case '\'': inSingle = true; current.Append(c); break;
-                case '"': inDouble = true; current.Append(c); break;
-                case '(': depth++; current.Append(c); break;
-                case ')': depth--; current.Append(c); break;
-                case ',' when depth == 0:
-                    entries.Add(current.ToString());
-                    current.Clear();
-                    break;
-                default:
-                    current.Append(c);
-                    break;
-            }
-        }
-
-        if (current.Length > 0)
-            entries.Add(current.ToString());
-
-        return entries;
     }
 
     private static int IndexOfWord(string text, string word, int start)

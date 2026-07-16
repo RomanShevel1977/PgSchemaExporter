@@ -14,7 +14,7 @@ public sealed class TableScriptGenerator : ISqlScriptGenerator<DbTable>
 
         sb.AppendLine($"CREATE {modifier}TABLE IF NOT EXISTS {SqlIdentifier.Qualified(table.Schema, table.Name)} (");
 
-        var columns = table.Columns.OrderBy(x => x.OrdinalPosition).ToList();
+        var columns = table.Columns;
 
         for (var i = 0; i < columns.Count; i++)
         {

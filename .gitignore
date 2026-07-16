@@ -16,4 +16,6 @@ publish/
 !scripts/run-integration-tests.sh
 !scripts/run-unit-tests.ps1
 !scripts/run-unit-tests.sh
+!scripts/profile-benchmarks.ps1
+!scripts/profile-benchmarks.sh
 

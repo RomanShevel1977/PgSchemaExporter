@@ -32,11 +32,22 @@ if (args.Contains("--version") || args.Contains("-v"))
 
 // Extract global flags before command-specific parsing.
 var verbosity = ResolveVerbosity(args);
-var profile = args.Contains("--profile");
-args = args.Where(a => a is not "--verbose" and not "--quiet" and not "--profile").ToArray();
+var profile = Array.IndexOf(args, "--profile") >= 0;
+var filtered = new string[args.Length];
+var filteredCount = 0;
+for (var i = 0; i < args.Length; i++)
+{
+    var a = args[i];
+    if (a != "--verbose" && a != "--quiet" && a != "--profile")
+        filtered[filteredCount++] = a;
+}
+if (filteredCount < args.Length)
+    Array.Resize(ref filtered, filteredCount);
+args = filtered;
 
 IProgressReporter progress = new ConsoleProgressReporter(verbosity);
 ILogger logger = new ConsoleLogger(verbosity);
+IMetadataProvider metadataProvider = new PostgresMetadataProvider();
 
 // When profiling, wrap the reporter so per-phase timings can be summarized afterwards.
 TimingProgressReporter? timing = null;
@@ -52,10 +63,10 @@ try
 
     if (string.Equals(command, "export", StringComparison.OrdinalIgnoreCase))
     {
-        var options = await ParseExportOptionsAsync(args.Skip(1).ToArray());
+        var options = await ParseExportOptionsAsync(args[1..]);
 
         var exporter = new SchemaExporter(
-            new PostgresMetadataProvider(),
+            metadataProvider,
             new SchemaFileWriter(),
             new DeployScriptWriter(),
             new ReadmeWriter());
@@ -82,9 +93,9 @@ try
 
     if (string.Equals(command, "diff", StringComparison.OrdinalIgnoreCase))
     {
-        var options = ParseDiffOptions(args.Skip(1).ToArray());
+        var options = ParseDiffOptions(args[1..]);
 
-        var differ = new SchemaDiffer();
+        var differ = new SchemaDiffer(metadataProvider);
         SchemaDiffResult result;
 
         if (!string.IsNullOrWhiteSpace(options.LeftConnectionString) ||
@@ -112,7 +123,7 @@ try
 
     if (string.Equals(command, "migrate", StringComparison.OrdinalIgnoreCase))
     {
-        var options = ParseMigrateOptions(args.Skip(1).ToArray());
+        var options = ParseMigrateOptions(args[1..]);
 
         var generator = new MigrationGenerator();
         var script = generator.Generate(options);
@@ -124,8 +135,7 @@ try
         }
 
         if (options.WarnHazards)
-            PrintHazards(HazardAnalyzer.Analyze(script)
-                .Select(h => (h.Severity.ToString(), h.Category.ToString(), h.Message, h.Statement)));
+            PrintHazards(HazardAnalyzer.Analyze(script));
 
         if (options.Preview)
         {
@@ -169,7 +179,7 @@ try
 
     if (string.Equals(command, "split-dump", StringComparison.OrdinalIgnoreCase))
     {
-        var options = ParseSplitDumpOptions(args.Skip(1).ToArray());
+        var options = ParseSplitDumpOptions(args[1..]);
 
         var splitter = new DumpSplitter(
             new SqlStatementSplitter(),
@@ -188,7 +198,7 @@ try
 
     if (string.Equals(command, "init", StringComparison.OrdinalIgnoreCase))
     {
-        var (path, force) = ParseInitOptions(args.Skip(1).ToArray());
+        var (path, force) = ParseInitOptions(args[1..]);
 
         await ExportConfigWriter.WriteAsync(path, force);
 
@@ -200,7 +210,7 @@ try
 
     if (string.Equals(command, "watch", StringComparison.OrdinalIgnoreCase))
     {
-        var options = ParseDiffOptions(args.Skip(1).ToArray());
+        var options = ParseDiffOptions(args[1..]);
 
         using var cts = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) =>
@@ -237,9 +247,9 @@ try
 
     if (string.Equals(command, "drift", StringComparison.OrdinalIgnoreCase))
     {
-        var options = ParseDriftOptions(args.Skip(1).ToArray());
+        var options = ParseDriftOptions(args[1..]);
 
-        var detector = new DriftDetector();
+        var detector = new DriftDetector(metadataProvider);
         var result = await detector.DetectAsync(options, progress, logger);
 
         var reportWriter = new SchemaDiffReportWriter();
@@ -273,7 +283,7 @@ try
 
     if (string.Equals(command, "fingerprint", StringComparison.OrdinalIgnoreCase))
     {
-        var (schema, output, verify) = ParseFingerprintOptions(args.Skip(1).ToArray());
+        var (schema, output, verify) = ParseFingerprintOptions(args[1..]);
 
         var result = SchemaFingerprint.Compute(schema);
 
@@ -322,7 +332,7 @@ try
 
     if (string.Equals(command, "plan", StringComparison.OrdinalIgnoreCase))
     {
-        var (migrateOptions, planFile, format) = CliParser.ParsePlanOptions(args.Skip(1).ToArray());
+        var (migrateOptions, planFile, format) = CliParser.ParsePlanOptions(args[1..]);
 
         var planner = new MigrationPlanner();
         var plan = planner.CreatePlan(migrateOptions);
@@ -345,7 +355,7 @@ try
 
     if (string.Equals(command, "apply", StringComparison.OrdinalIgnoreCase))
     {
-        var applyArgs = CliParser.ParseApplyOptions(args.Skip(1).ToArray());
+        var applyArgs = CliParser.ParseApplyOptions(args[1..]);
 
         var plan = await MigrationPlanFile.ReadAsync(applyArgs.PlanFile);
 
@@ -355,8 +365,7 @@ try
             return;
         }
 
-        PrintHazards(plan.Hazards
-            .Select(h => (h.Severity, h.Category, h.Message, h.Statement)));
+        PrintPlanHazards(plan.Hazards);
 
         if (!applyArgs.DryRun && !applyArgs.AssumeYes)
         {
@@ -388,9 +397,9 @@ try
 
     if (string.Equals(command, "diagram", StringComparison.OrdinalIgnoreCase))
     {
-        var options = CliParser.ParseDiagramOptions(args.Skip(1).ToArray());
+        var options = CliParser.ParseDiagramOptions(args[1..]);
 
-        var generator = new SchemaDiagramGenerator();
+        var generator = new SchemaDiagramGenerator(metadataProvider);
         var diagram = await generator.GenerateAsync(options, progress, logger);
 
         if (!string.IsNullOrWhiteSpace(options.OutputFile))
@@ -729,10 +738,9 @@ static Verbosity ResolveVerbosity(string[] args)
     return args.Contains("--verbose") ? Verbosity.Verbose : Verbosity.Normal;
 }
 
-static void PrintHazards(IEnumerable<(string Severity, string Category, string Message, string Statement)> hazards)
+static void PrintHazards(IReadOnlyList<Hazard> hazards)
 {
-    var list = hazards.ToList();
-    if (list.Count == 0)
+    if (hazards.Count == 0)
         return;
 
     static int Rank(string severity) => severity.ToLowerInvariant() switch
@@ -743,8 +751,30 @@ static void PrintHazards(IEnumerable<(string Severity, string Category, string M
         _ => 0
     };
 
-    Console.WriteLine($"Hazards detected ({list.Count}):");
-    foreach (var hazard in list.OrderByDescending(h => Rank(h.Severity)))
+    Console.WriteLine($"Hazards detected ({hazards.Count}):");
+    foreach (var hazard in hazards.OrderByDescending(h => Rank(h.Severity.ToString())))
+    {
+        Console.WriteLine($"  [{hazard.Severity.ToString().ToUpperInvariant()}] {hazard.Category}: {hazard.Message}");
+        Console.WriteLine($"      {hazard.Statement}");
+    }
+    Console.WriteLine();
+}
+
+static void PrintPlanHazards(IReadOnlyList<PlanHazard> hazards)
+{
+    if (hazards.Count == 0)
+        return;
+
+    static int Rank(string severity) => severity.ToLowerInvariant() switch
+    {
+        "high" => 3,
+        "medium" => 2,
+        "low" => 1,
+        _ => 0
+    };
+
+    Console.WriteLine($"Hazards detected ({hazards.Count}):");
+    foreach (var hazard in hazards.OrderByDescending(h => Rank(h.Severity)))
     {
         Console.WriteLine($"  [{hazard.Severity.ToUpperInvariant()}] {hazard.Category}: {hazard.Message}");
         Console.WriteLine($"      {hazard.Statement}");

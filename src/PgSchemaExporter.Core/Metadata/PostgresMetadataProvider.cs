@@ -1,4 +1,5 @@
 using Npgsql;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Linq;
 using Microsoft.Extensions.Logging;
@@ -11,6 +12,8 @@ namespace PgSchemaExporter.Core.Metadata;
 
 public sealed class PostgresMetadataProvider : IMetadataProvider
 {
+    private static readonly ConcurrentDictionary<string, bool> PolicyDefFunctionExistsCache = new();
+
     private const int MaxParallelQueries = 8;
 
     // Number of object kinds loaded; used to report progress totals.
@@ -253,7 +256,9 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
             SELECT n.nspname AS schema_name,
                    t.typname AS type_name,
                    t.typtype::text AS type_kind,
-                   array_remove(array_agg(e.enumlabel ORDER BY e.enumsortorder), NULL) AS enum_labels,
+                   (SELECT array_agg(e.enumlabel ORDER BY e.enumsortorder)
+                    FROM pg_enum e
+                    WHERE e.enumtypid = t.oid) AS enum_labels,
                    CASE WHEN t.typtype = 'c' THEN
                        'CREATE TYPE ' || quote_ident(n.nspname) || '.' || quote_ident(t.typname) || ' AS (' ||
                        COALESCE((
@@ -268,13 +273,11 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
                    END AS range_def
             FROM pg_type t
             JOIN pg_namespace n ON n.oid = t.typnamespace
-            LEFT JOIN pg_enum e ON e.enumtypid = t.oid
             WHERE n.nspname = ANY(@schemas)
               AND NOT n.nspname = ANY(@excludeSchemas)
               AND t.typtype IN ('e', 'c', 'r')
               AND (t.typtype <> 'c'
                    OR EXISTS (SELECT 1 FROM pg_class c WHERE c.oid = t.typrelid AND c.relkind = 'c'))
-            GROUP BY n.nspname, t.typname, t.typtype, t.oid, t.typrelid
             ORDER BY n.nspname, t.typname;";
 
         await using var command = new NpgsqlCommand(sql, connection);
@@ -431,26 +434,45 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
     {
         const string sql = @"
             SELECT
-                c.table_schema,
-                c.table_name,
-                c.column_name,
-                c.udt_schema,
-                c.udt_name,
-                c.data_type,
-                c.is_nullable,
-                c.column_default,
-                c.ordinal_position,
-                c.character_maximum_length,
-                c.numeric_precision,
-                c.numeric_scale
-            FROM information_schema.columns c
-            JOIN information_schema.tables t
-              ON t.table_schema = c.table_schema
-             AND t.table_name = c.table_name
-            WHERE c.table_schema = ANY(@schemas)
-              AND NOT c.table_schema = ANY(@excludeSchemas)
-              AND t.table_type = 'BASE TABLE'
-            ORDER BY c.table_schema, c.table_name, c.ordinal_position;";
+                n.nspname AS table_schema,
+                c.relname AS table_name,
+                a.attname AS column_name,
+                un.nspname AS udt_schema,
+                ut.typname AS udt_name,
+                CASE
+                    WHEN ut.typelem != 0 THEN 'ARRAY'
+                    WHEN ut.typtype = 'b' AND un.nspname = 'pg_catalog'
+                        THEN pg_catalog.format_type(ut.oid, NULL)
+                    ELSE 'USER-DEFINED'
+                END AS data_type,
+                CASE WHEN NOT a.attnotnull THEN 'YES' ELSE 'NO' END AS is_nullable,
+                pg_get_expr(ad.adbin, ad.adrelid) AS column_default,
+                a.attnum AS ordinal_position,
+                CASE
+                    WHEN ut.typname IN ('varchar', 'bpchar') AND a.atttypmod > 0
+                        THEN a.atttypmod - 4
+                    ELSE NULL
+                END AS character_maximum_length,
+                CASE
+                    WHEN ut.typname = 'numeric' AND a.atttypmod > 0
+                        THEN ((a.atttypmod - 4) >> 16) & 65535
+                    ELSE NULL
+                END AS numeric_precision,
+                CASE
+                    WHEN ut.typname = 'numeric' AND a.atttypmod > 0
+                        THEN (a.atttypmod - 4) & 65535
+                    ELSE NULL
+                END AS numeric_scale
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+            JOIN pg_type ut ON ut.oid = a.atttypid
+            JOIN pg_namespace un ON un.oid = ut.typnamespace
+            LEFT JOIN pg_attrdef ad ON ad.adrelid = c.oid AND ad.adnum = a.attnum
+            WHERE c.relkind IN ('r', 'p')
+              AND n.nspname = ANY(@schemas)
+              AND NOT n.nspname = ANY(@excludeSchemas)
+            ORDER BY n.nspname, c.relname, a.attnum;";
 
         await using var command = new NpgsqlCommand(sql, connection);
         AddSchemaParameters(command, options);
@@ -954,6 +976,10 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
 
     private static async Task<bool> PolicyDefFunctionExistsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
+        var key = connection.ConnectionString;
+        if (PolicyDefFunctionExistsCache.TryGetValue(key, out var cached))
+            return cached;
+
         const string sql = @"
             SELECT EXISTS (
                 SELECT 1
@@ -965,7 +991,9 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
 
         await using var command = new NpgsqlCommand(sql, connection);
         var result = await command.ExecuteScalarAsync(cancellationToken);
-        return result is bool exists && exists;
+        var exists = result is bool b && b;
+        PolicyDefFunctionExistsCache.TryAdd(key, exists);
+        return exists;
     }
 
     private static async Task<IReadOnlyList<DbFunction>> GetFunctionsAsync(NpgsqlConnection connection, ExportOptions options, CancellationToken cancellationToken)

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using PgSchemaExporter.Core.Diagnostics;
+using PgSchemaExporter.Core.Metadata;
 using PgSchemaExporter.Core.Options;
 
 namespace PgSchemaExporter.Core.Diff;
@@ -13,7 +14,12 @@ namespace PgSchemaExporter.Core.Diff;
 /// </summary>
 public sealed class SchemaDiffer
 {
-    private readonly LiveSchemaExporter _liveExporter = new();
+    private readonly LiveSchemaExporter _liveExporter;
+
+    public SchemaDiffer(IMetadataProvider? metadataProvider = null)
+    {
+        _liveExporter = new LiveSchemaExporter(metadataProvider);
+    }
 
     public async Task<SchemaDiffResult> DiffAsync(
         SchemaDiffOptions options,

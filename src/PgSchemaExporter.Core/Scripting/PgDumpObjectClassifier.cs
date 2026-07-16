@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.RegularExpressions;
 using PgSchemaExporter.Core.Models;
 
@@ -122,22 +123,60 @@ public sealed class PgDumpObjectClassifier
 
     private static string RemovePgDumpNoise(string statement)
     {
-        var lines = statement
-            .Split('\n')
-            .Where(line =>
-            {
-                var trimmed = line.Trim();
-                return !trimmed.StartsWith("--")
-                       && !trimmed.StartsWith("SET ", StringComparison.OrdinalIgnoreCase)
-                       && !trimmed.StartsWith("SELECT pg_catalog.set_config", StringComparison.OrdinalIgnoreCase);
-            });
+        var result = new StringBuilder(statement.Length);
+        var i = 0;
+        var len = statement.Length;
 
-        return string.Join(Environment.NewLine, lines).Trim();
+        while (i < len)
+        {
+            var lineStart = i;
+            while (i < len && statement[i] != '\n')
+                i++;
+
+            var lineEnd = i;
+            var contentStart = lineStart;
+            while (contentStart < lineEnd && char.IsWhiteSpace(statement[contentStart]))
+                contentStart++;
+
+            var isNoise = false;
+            if (contentStart < lineEnd)
+            {
+                if (statement[contentStart] == '-' && contentStart + 1 < lineEnd && statement[contentStart + 1] == '-')
+                    isNoise = true;
+                else if (IsPrefixIgnoreCase(statement, contentStart, lineEnd, "SET "))
+                    isNoise = true;
+                else if (IsPrefixIgnoreCase(statement, contentStart, lineEnd, "SELECT pg_catalog.set_config"))
+                    isNoise = true;
+            }
+
+            if (!isNoise)
+            {
+                if (result.Length > 0)
+                    result.AppendLine();
+
+                result.Append(statement, lineStart, lineEnd - lineStart);
+            }
+
+            if (i < len)
+                i++;
+        }
+
+        var output = result.ToString();
+        var trimmed = output.AsSpan().Trim();
+        return trimmed.Length == output.Length ? output : trimmed.ToString();
+    }
+
+    private static bool IsPrefixIgnoreCase(string text, int start, int end, string prefix)
+    {
+        if (start + prefix.Length > end)
+            return false;
+
+        return text.AsSpan(start, prefix.Length).Equals(prefix, StringComparison.OrdinalIgnoreCase);
     }
 
     private static (string Schema, string Name) SplitQualifiedName(string qualifiedName)
     {
-        var parts = SplitByDotRespectingQuotes(qualifiedName.Trim());
+        var parts = SplitByDotRespectingQuotes(qualifiedName.AsSpan().Trim());
 
         if (parts.Count >= 2)
             return (CleanIdentifier(parts[^2]), CleanIdentifier(parts[^1]));
@@ -145,44 +184,67 @@ public sealed class PgDumpObjectClassifier
         return ("public", CleanIdentifier(qualifiedName));
     }
 
-    private static List<string> SplitByDotRespectingQuotes(string value)
+    private static List<string> SplitByDotRespectingQuotes(ReadOnlySpan<char> value)
     {
         var result = new List<string>();
-        var current = new List<char>();
+        var start = 0;
         var inQuotes = false;
 
-        foreach (var ch in value)
+        for (var i = 0; i < value.Length; i++)
         {
-            if (ch == '"')
-            {
+            if (value[i] == '"')
                 inQuotes = !inQuotes;
-                current.Add(ch);
-                continue;
-            }
 
-            if (ch == '.' && !inQuotes)
+            if (value[i] == '.' && !inQuotes)
             {
-                result.Add(new string(current.ToArray()));
-                current.Clear();
-                continue;
+                result.Add(value.Slice(start, i - start).ToString());
+                start = i + 1;
             }
-
-            current.Add(ch);
         }
 
-        if (current.Count > 0)
-            result.Add(new string(current.ToArray()));
+        if (start < value.Length)
+            result.Add(value.Slice(start, value.Length - start).ToString());
 
         return result;
     }
 
     private static string CleanIdentifier(string value)
     {
-        value = value.Trim().TrimEnd(';');
+        var span = value.AsSpan().Trim().TrimEnd(';');
 
-        if (value.StartsWith('"') && value.EndsWith('"') && value.Length >= 2)
-            value = value[1..^1].Replace("\"\"", "\"");
+        if (span.Length >= 2 && span[0] == (char)34 && span[span.Length - 1] == (char)34)
+        {
+            span = span.Slice(1, span.Length - 2);
+            if (ContainsConsecutiveQuotes(span))
+            {
+                var sb = new StringBuilder(span.Length);
+                for (var i = 0; i < span.Length; i++)
+                {
+                    if (i + 1 < span.Length && span[i] == (char)34 && span[i + 1] == (char)34)
+                    {
+                        sb.Append((char)34);
+                        i++;
+                    }
+                    else
+                    {
+                        sb.Append(span[i]);
+                    }
+                }
+                return sb.ToString();
+            }
+            return span.ToString();
+        }
 
-        return value;
+        return span.ToString();
+    }
+
+    private static bool ContainsConsecutiveQuotes(ReadOnlySpan<char> span)
+    {
+        for (var i = 0; i < span.Length - 1; i++)
+        {
+            if (span[i] == (char)34 && span[i + 1] == (char)34)
+                return true;
+        }
+        return false;
     }
 }

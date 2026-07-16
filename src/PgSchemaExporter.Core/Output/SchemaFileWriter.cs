@@ -72,44 +72,71 @@ public sealed class SchemaFileWriter
             .GroupBy(x => TableKey(x.Schema, x.TableName))
             .ToDictionary(g => g.Key, g => g.ToList());
 
-        foreach (var item in model.Tables.OrderBy(x => x.Schema).ThenBy(x => x.Name))
-        {
-            var sql = ApplyFormat(_tableGenerator.Generate(item), format);
-            var key = TableKey(item.Schema, item.Name);
+        var tables = model.Tables.OrderBy(x => x.Schema).ThenBy(x => x.Name).ToList();
 
-            if (!format.SplitConstraints && constraintsByTable.TryGetValue(key, out var inlineConstraints))
+        await WriteItemsParallelAsync(
+            outputDirectory,
+            "tables",
+            tables,
+            item =>
             {
-                sql += Environment.NewLine + ApplyFormat(
-                    string.Join(Environment.NewLine, inlineConstraints.Select(_constraintGenerator.Generate)), format);
-            }
+                var sql = ApplyFormat(_tableGenerator.Generate(item), format);
+                var key = TableKey(item.Schema, item.Name);
 
-            if (!format.SplitIndexes && indexesByTable.TryGetValue(key, out var inlineIndexes))
+                if (!format.SplitConstraints && constraintsByTable.TryGetValue(key, out var inlineConstraints))
+                {
+                    sql += Environment.NewLine + ApplyFormat(
+                        string.Join(Environment.NewLine, inlineConstraints.Select(_constraintGenerator.Generate)), format);
+                }
+
+                if (!format.SplitIndexes && indexesByTable.TryGetValue(key, out var inlineIndexes))
+                {
+                    sql += Environment.NewLine + ApplyFormat(
+                        string.Join(Environment.NewLine, inlineIndexes.Select(_indexGenerator.Generate)), format);
+                }
+
+                return ($"{Safe(item.Schema)}.{Safe(item.Name)}.sql", sql);
+            },
+            result.TableFiles,
+            cancellationToken);
+
+        var constraintGroups = model.Constraints
+            .GroupBy(x => new { x.Schema, x.TableName })
+            .Where(g => format.SplitConstraints || !tableKeys.Contains(TableKey(g.Key.Schema, g.Key.TableName)))
+            .OrderBy(x => x.Key.Schema)
+            .ThenBy(x => x.Key.TableName)
+            .ToList();
+
+        await WriteItemsParallelAsync(
+            outputDirectory,
+            "constraints",
+            constraintGroups,
+            group =>
             {
-                sql += Environment.NewLine + ApplyFormat(
-                    string.Join(Environment.NewLine, inlineIndexes.Select(_indexGenerator.Generate)), format);
-            }
+                var sql = ApplyFormat(string.Join(Environment.NewLine, group.Select(_constraintGenerator.Generate)), format);
+                return ($"{Safe(group.Key.Schema)}.{Safe(group.Key.TableName)}.constraints.sql", sql);
+            },
+            result.ConstraintFiles,
+            cancellationToken);
 
-            result.TableFiles.Add(await WriteFileAsync(outputDirectory, "tables", $"{Safe(item.Schema)}.{Safe(item.Name)}.sql", sql, cancellationToken));
-        }
+        var indexGroups = model.Indexes
+            .GroupBy(x => new { x.Schema, x.TableName })
+            .Where(g => format.SplitIndexes || !tableKeys.Contains(TableKey(g.Key.Schema, g.Key.TableName)))
+            .OrderBy(x => x.Key.Schema)
+            .ThenBy(x => x.Key.TableName)
+            .ToList();
 
-        foreach (var group in model.Constraints.GroupBy(x => new { x.Schema, x.TableName }).OrderBy(x => x.Key.Schema).ThenBy(x => x.Key.TableName))
-        {
-            // When inlining is enabled the constraints are written into the table file instead.
-            if (!format.SplitConstraints && tableKeys.Contains(TableKey(group.Key.Schema, group.Key.TableName)))
-                continue;
-
-            var sql = ApplyFormat(string.Join(Environment.NewLine, group.Select(_constraintGenerator.Generate)), format);
-            result.ConstraintFiles.Add(await WriteFileAsync(outputDirectory, "constraints", $"{Safe(group.Key.Schema)}.{Safe(group.Key.TableName)}.constraints.sql", sql, cancellationToken));
-        }
-
-        foreach (var group in model.Indexes.GroupBy(x => new { x.Schema, x.TableName }).OrderBy(x => x.Key.Schema).ThenBy(x => x.Key.TableName))
-        {
-            if (!format.SplitIndexes && tableKeys.Contains(TableKey(group.Key.Schema, group.Key.TableName)))
-                continue;
-
-            var sql = ApplyFormat(string.Join(Environment.NewLine, group.Select(_indexGenerator.Generate)), format);
-            result.IndexFiles.Add(await WriteFileAsync(outputDirectory, "indexes", $"{Safe(group.Key.Schema)}.{Safe(group.Key.TableName)}.indexes.sql", sql, cancellationToken));
-        }
+        await WriteItemsParallelAsync(
+            outputDirectory,
+            "indexes",
+            indexGroups,
+            group =>
+            {
+                var sql = ApplyFormat(string.Join(Environment.NewLine, group.Select(_indexGenerator.Generate)), format);
+                return ($"{Safe(group.Key.Schema)}.{Safe(group.Key.TableName)}.indexes.sql", sql);
+            },
+            result.IndexFiles,
+            cancellationToken);
 
         foreach (var item in model.Views.OrderBy(x => x.Schema).ThenBy(x => x.Name))
             result.ViewFiles.Add(await WriteFileAsync(outputDirectory, "views", $"{Safe(item.Schema)}.{Safe(item.Name)}.sql", _viewGenerator.Generate(item), cancellationToken));
@@ -169,11 +196,19 @@ public sealed class SchemaFileWriter
             result.GrantFiles.Add(await WriteFileAsync(outputDirectory, "grants", fileName, sql, cancellationToken));
         }
 
-        foreach (var item in model.Functions.OrderBy(x => x.Schema).ThenBy(x => x.Name).ThenBy(x => x.ArgumentsIdentity))
-        {
-            var argsHash = StableHash(item.ArgumentsIdentity);
-            result.FunctionFiles.Add(await WriteFileAsync(outputDirectory, "functions", $"{Safe(item.Schema)}.{Safe(item.Name)}.{argsHash}.sql", _functionGenerator.Generate(item), cancellationToken));
-        }
+        var functions = model.Functions.OrderBy(x => x.Schema).ThenBy(x => x.Name).ThenBy(x => x.ArgumentsIdentity).ToList();
+
+        await WriteItemsParallelAsync(
+            outputDirectory,
+            "functions",
+            functions,
+            item =>
+            {
+                var argsHash = StableHash(item.ArgumentsIdentity);
+                return ($"{Safe(item.Schema)}.{Safe(item.Name)}.{argsHash}.sql", _functionGenerator.Generate(item));
+            },
+            result.FunctionFiles,
+            cancellationToken);
 
         return result;
     }
@@ -193,6 +228,24 @@ public sealed class SchemaFileWriter
 
         await File.WriteAllTextAsync(fullPath, content, cancellationToken);
         return relativePath;
+    }
+
+    private static async Task WriteItemsParallelAsync<T>(
+        string outputDirectory,
+        string folder,
+        IReadOnlyList<T> items,
+        Func<T, (string fileName, string content)> generator,
+        List<string> result,
+        CancellationToken cancellationToken)
+    {
+        var entries = new (string fileName, string content)[items.Count];
+        Parallel.For(0, items.Count, i => entries[i] = generator(items[i]));
+
+        foreach (var (fileName, content) in entries)
+        {
+            var relativePath = await WriteFileAsync(outputDirectory, folder, fileName, content, cancellationToken);
+            result.Add(relativePath);
+        }
     }
 
     private static string Safe(string value) => SqlIdentifier.SafeFileName(value);

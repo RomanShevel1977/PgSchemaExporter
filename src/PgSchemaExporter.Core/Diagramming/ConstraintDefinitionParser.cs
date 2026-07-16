@@ -1,3 +1,5 @@
+using PgSchemaExporter.Core.Scripting;
+
 namespace PgSchemaExporter.Core.Diagramming;
 
 public enum ConstraintKind
@@ -94,14 +96,14 @@ public static class ConstraintDefinitionParser
         if (open < 0)
             return [];
 
-        var close = FindMatchingParen(text, open);
+        var close = SqlTokenizer.FindMatchingParen(text, open);
         if (close < 0)
             return [];
 
         afterList = close + 1;
         var inner = text[(open + 1)..close];
 
-        return SplitTopLevel(inner)
+        return SqlTokenizer.SplitTopLevel(inner)
             .Select(part => Unquote(part.Trim()))
             .Where(part => part.Length > 0)
             .ToList();
@@ -179,142 +181,75 @@ public static class ConstraintDefinitionParser
     /// <summary>Finds a keyword as a whole word, ignoring case and collapsing internal spaces.</summary>
     private static int FindKeyword(string text, string keyword, int start = 0)
     {
-        // Keyword may contain a single space (e.g. "FOREIGN KEY"); match flexible whitespace.
-        var words = keyword.Split(' ');
+        // Keywords contain at most one space (e.g. "FOREIGN KEY", "PRIMARY KEY").
+        var spaceIndex = keyword.IndexOf(' ');
+        var firstWord = spaceIndex >= 0 ? keyword.AsSpan(0, spaceIndex) : keyword.AsSpan();
+        var secondWord = spaceIndex >= 0 ? keyword.AsSpan(spaceIndex + 1) : ReadOnlySpan<char>.Empty;
+
+        var minLength = firstWord.Length + (spaceIndex >= 0 ? 1 : 0) + secondWord.Length;
         var i = start;
 
-        while (i < text.Length)
+        while (i <= text.Length - minLength)
         {
-            var match = TryMatchWords(text, i, words);
-            if (match >= 0)
-                return i;
-            i++;
+            var foundAt = text.AsSpan(i).IndexOf(firstWord, StringComparison.OrdinalIgnoreCase);
+            if (foundAt < 0)
+                return -1;
+
+            var candidate = i + foundAt;
+
+            if (candidate > 0 && IsWordChar(text[candidate - 1]))
+            {
+                i = candidate + 1;
+                continue;
+            }
+
+            var pos = candidate + firstWord.Length;
+
+            // Single-word keyword; check right boundary.
+            if (spaceIndex < 0)
+            {
+                if (pos < text.Length && IsWordChar(text[pos]))
+                {
+                    i = candidate + 1;
+                    continue;
+                }
+
+                return candidate;
+            }
+
+            // Multi-word keyword: require whitespace, then second word.
+            if (pos >= text.Length || !char.IsWhiteSpace(text[pos]))
+            {
+                i = candidate + 1;
+                continue;
+            }
+
+            while (pos < text.Length && char.IsWhiteSpace(text[pos]))
+                pos++;
+
+            if (pos + secondWord.Length > text.Length)
+                return -1;
+
+            if (!text.AsSpan(pos, secondWord.Length).Equals(secondWord, StringComparison.OrdinalIgnoreCase))
+            {
+                i = candidate + 1;
+                continue;
+            }
+
+            var after = pos + secondWord.Length;
+            if (after < text.Length && IsWordChar(text[after]))
+            {
+                i = candidate + 1;
+                continue;
+            }
+
+            return candidate;
         }
 
         return -1;
     }
 
-    /// <summary>
-    /// Attempts to match the sequence of <paramref name="words"/> at <paramref name="index"/>,
-    /// allowing one-or-more whitespace between words and requiring word boundaries.
-    /// Returns the index past the match, or -1.
-    /// </summary>
-    private static int TryMatchWords(string text, int index, string[] words)
-    {
-        if (index > 0 && (char.IsLetterOrDigit(text[index - 1]) || text[index - 1] == '_'))
-            return -1;
-
-        var pos = index;
-        for (var w = 0; w < words.Length; w++)
-        {
-            var word = words[w];
-            if (pos + word.Length > text.Length)
-                return -1;
-
-            if (!string.Equals(text.Substring(pos, word.Length), word, StringComparison.OrdinalIgnoreCase))
-                return -1;
-
-            pos += word.Length;
-
-            if (w < words.Length - 1)
-            {
-                var wsStart = pos;
-                while (pos < text.Length && char.IsWhiteSpace(text[pos]))
-                    pos++;
-                if (pos == wsStart)
-                    return -1;
-            }
-        }
-
-        if (pos < text.Length && (char.IsLetterOrDigit(text[pos]) || text[pos] == '_'))
-            return -1;
-
-        return pos;
-    }
-
-    private static int FindMatchingParen(string text, int openIndex)
-    {
-        var depth = 0;
-        var inSingle = false;
-        var inDouble = false;
-
-        for (var i = openIndex; i < text.Length; i++)
-        {
-            var c = text[i];
-
-            if (inSingle)
-            {
-                if (c == '\'') inSingle = false;
-                continue;
-            }
-
-            if (inDouble)
-            {
-                if (c == '"') inDouble = false;
-                continue;
-            }
-
-            switch (c)
-            {
-                case '\'': inSingle = true; break;
-                case '"': inDouble = true; break;
-                case '(': depth++; break;
-                case ')':
-                    depth--;
-                    if (depth == 0)
-                        return i;
-                    break;
-            }
-        }
-
-        return -1;
-    }
-
-    private static List<string> SplitTopLevel(string body)
-    {
-        var entries = new List<string>();
-        var current = new System.Text.StringBuilder();
-        var depth = 0;
-        var inSingle = false;
-        var inDouble = false;
-
-        foreach (var c in body)
-        {
-            if (inSingle)
-            {
-                current.Append(c);
-                if (c == '\'') inSingle = false;
-                continue;
-            }
-
-            if (inDouble)
-            {
-                current.Append(c);
-                if (c == '"') inDouble = false;
-                continue;
-            }
-
-            switch (c)
-            {
-                case '\'': inSingle = true; current.Append(c); break;
-                case '"': inDouble = true; current.Append(c); break;
-                case '(': depth++; current.Append(c); break;
-                case ')': depth--; current.Append(c); break;
-                case ',' when depth == 0:
-                    entries.Add(current.ToString());
-                    current.Clear();
-                    break;
-                default:
-                    current.Append(c);
-                    break;
-            }
-        }
-
-        if (current.Length > 0)
-            entries.Add(current.ToString());
-
-        return entries;
-    }
+    private static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
 
     private static string Unquote(string identifier)
     {

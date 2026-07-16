@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using PgSchemaExporter.Core.Models;
 using PgSchemaExporter.Core.Scripting;
 
@@ -234,37 +233,44 @@ public sealed class DeploymentPlanBuilder
         foreach (var file in allFiles)
             dependencies.TryAdd(file, []);
 
-        var ordered = TopologicalSort(allFiles, dependencies);
+        var sortedDependencies = dependencies.ToDictionary(
+            x => x.Key,
+            x => (IReadOnlyList<string>)x.Value.OrderBy(y => y, StringComparer.OrdinalIgnoreCase).ToList(),
+            StringComparer.OrdinalIgnoreCase);
+
+        var ordered = TopologicalSort(allFiles, sortedDependencies);
 
         return new DeploymentPlan
         {
             OrderedFiles = ordered,
-            Dependencies = dependencies
+            Dependencies = sortedDependencies
                 .Where(x => x.Value.Count > 0)
                 .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(
                     x => x.Key,
-                    x => (IReadOnlyList<string>)x.Value.OrderBy(y => y, StringComparer.OrdinalIgnoreCase).ToList(),
+                    x => x.Value,
                     StringComparer.OrdinalIgnoreCase)
         };
     }
 
-    private static IReadOnlyList<string> TopologicalSort(IReadOnlyList<string> files, Dictionary<string, HashSet<string>> dependencies)
+    private static IReadOnlyList<string> TopologicalSort(IReadOnlyList<string> files, Dictionary<string, IReadOnlyList<string>> dependencies)
     {
         var result = new List<string>();
+        var resultSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var permanent = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var temporary = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var file in files)
-            Visit(file, dependencies, result, permanent, temporary);
+            Visit(file, dependencies, result, resultSet, permanent, temporary);
 
         return result;
     }
 
     private static void Visit(
         string file,
-        Dictionary<string, HashSet<string>> dependencies,
+        Dictionary<string, IReadOnlyList<string>> dependencies,
         List<string> result,
+        HashSet<string> resultSet,
         HashSet<string> permanent,
         HashSet<string> temporary)
     {
@@ -280,17 +286,17 @@ public sealed class DeploymentPlanBuilder
 
         if (dependencies.TryGetValue(file, out var deps))
         {
-            foreach (var dependency in deps.OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+            foreach (var dependency in deps)
             {
                 if (dependencies.ContainsKey(dependency))
-                    Visit(dependency, dependencies, result, permanent, temporary);
+                    Visit(dependency, dependencies, result, resultSet, permanent, temporary);
             }
         }
 
         temporary.Remove(file);
         permanent.Add(file);
 
-        if (!result.Contains(file, StringComparer.OrdinalIgnoreCase))
+        if (resultSet.Add(file))
             result.Add(file);
     }
 
@@ -348,35 +354,132 @@ public sealed class DeploymentPlanBuilder
         return parts.Length == 2 ? $"{parts[0]}.{parts[1]}" : name;
     }
 
-    private static bool ReferencesTable(string sql, string schema, string table)
+    private static bool ReferencesTable(string text, string schema, string table)
     {
-        return Regex.IsMatch(
-            sql,
-            $@"\bREFERENCES\s+(?:{Regex.Escape(schema)}\.)?{Regex.Escape(table)}\b",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-    }
+        if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(table))
+            return false;
 
+        const string keyword = "REFERENCES";
+        int index = 0;
+        while ((index = text.IndexOf(keyword, index, StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            int afterKeyword = index + keyword.Length;
+            bool leftBoundary = index == 0 || !IsWordChar(text[index - 1]);
+
+            if (leftBoundary && afterKeyword < text.Length && char.IsWhiteSpace(text[afterKeyword]))
+            {
+                int pos = afterKeyword;
+                while (pos < text.Length && char.IsWhiteSpace(text[pos]))
+                    pos++;
+
+                if (TryMatchQualifiedOrUnqualifiedName(text, pos, schema, table))
+                    return true;
+            }
+
+            index += keyword.Length;
+        }
+
+        return false;
+    }
 
     private static bool ReferencesRoutine(string text, string schema, string name)
     {
-        return Regex.IsMatch(
-            text,
-            $@"\b(?:{Regex.Escape(schema)}\.)?{Regex.Escape(name)}\s*\(",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(name))
+            return false;
+
+        if (!string.IsNullOrEmpty(schema) && TryFindRoutineCall(text, $"{schema}.{name}"))
+            return true;
+
+        return TryFindRoutineCall(text, name);
     }
 
     private static bool ReferencesObject(string text, string schema, string name)
     {
-        return ContainsWord(text, $"{schema}.{name}") || ContainsWord(text, name);
+        if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(name))
+            return false;
+
+        if (!string.IsNullOrEmpty(schema) && ContainsWord(text, $"{schema}.{name}"))
+            return true;
+
+        return ContainsWord(text, name);
     }
 
     private static bool ContainsWord(string text, string value)
     {
-        return Regex.IsMatch(
-            text,
-            $@"(?<![A-Za-z0-9_]){Regex.Escape(value)}(?![A-Za-z0-9_])",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(value))
+            return false;
+
+        int index = 0;
+        int valueLength = value.Length;
+        while ((index = text.IndexOf(value, index, StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            bool leftBoundary = index == 0 || !IsWordChar(text[index - 1]);
+            bool rightBoundary = index + valueLength == text.Length || !IsWordChar(text[index + valueLength]);
+
+            if (leftBoundary && rightBoundary)
+                return true;
+
+            index += valueLength;
+        }
+
+        return false;
     }
+
+    private static bool TryFindRoutineCall(string text, string value)
+    {
+        int index = 0;
+        int valueLength = value.Length;
+        while ((index = text.IndexOf(value, index, StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            bool leftBoundary = index == 0 || !IsWordChar(text[index - 1]);
+            if (leftBoundary)
+            {
+                int pos = index + valueLength;
+                while (pos < text.Length && char.IsWhiteSpace(text[pos]))
+                    pos++;
+
+                if (pos < text.Length && text[pos] == '(')
+                    return true;
+            }
+
+            index += valueLength;
+        }
+
+        return false;
+    }
+
+    private static bool TryMatchQualifiedOrUnqualifiedName(string text, int pos, string schema, string name)
+    {
+        int nameLength = name.Length;
+        if (pos + nameLength > text.Length)
+            return false;
+
+        if (!string.IsNullOrEmpty(schema))
+        {
+            int schemaLength = schema.Length;
+            if (pos + schemaLength + 1 + nameLength <= text.Length &&
+                text[pos + schemaLength] == '.' &&
+                text.AsSpan(pos, schemaLength).Equals(schema, StringComparison.OrdinalIgnoreCase) &&
+                text.AsSpan(pos + schemaLength + 1, nameLength).Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
+                int after = pos + schemaLength + 1 + nameLength;
+                if (after == text.Length || !IsWordChar(text[after]))
+                    return true;
+            }
+        }
+
+        if (text.AsSpan(pos, nameLength).Equals(name, StringComparison.OrdinalIgnoreCase))
+        {
+            int after = pos + nameLength;
+            if (after == text.Length || !IsWordChar(text[after]))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsWordChar(char c) =>
+        (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
 
     private static string Safe(string value)
     {

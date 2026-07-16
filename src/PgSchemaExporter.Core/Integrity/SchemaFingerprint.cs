@@ -33,10 +33,8 @@ public static class SchemaFingerprint
             .OrderBy(x => x.Relative, StringComparer.Ordinal)
             .ToList();
 
-        using var sha = SHA256.Create();
+        using var aggregate = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var fileHashes = new List<SchemaFileHash>(files.Count);
-
-        using var aggregate = new MemoryStream();
 
         foreach (var file in files)
         {
@@ -44,8 +42,7 @@ public static class SchemaFingerprint
                 .Replace("\r\n", "\n")
                 .Replace('\r', '\n');
 
-            var contentHash = Convert.ToHexString(
-                sha.ComputeHash(Encoding.UTF8.GetBytes(content))).ToLowerInvariant();
+            var contentHash = ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
 
             fileHashes.Add(new SchemaFileHash
             {
@@ -54,11 +51,10 @@ public static class SchemaFingerprint
             });
 
             var entry = Encoding.UTF8.GetBytes($"{file.Relative}\n{contentHash}\n");
-            aggregate.Write(entry, 0, entry.Length);
+            aggregate.AppendData(entry);
         }
 
-        aggregate.Position = 0;
-        var overall = Convert.ToHexString(sha.ComputeHash(aggregate)).ToLowerInvariant();
+        var overall = ToHexStringLower(aggregate.GetHashAndReset());
 
         return new SchemaFingerprintResult
         {
@@ -66,6 +62,20 @@ public static class SchemaFingerprint
             FileCount = fileHashes.Count,
             Files = fileHashes
         };
+    }
+
+    private static string ToHexStringLower(byte[] bytes)
+    {
+        return string.Create(bytes.Length * 2, bytes, static (chars, state) =>
+        {
+            ReadOnlySpan<char> lookup = "0123456789abcdef";
+            for (var i = 0; i < state.Length; i++)
+            {
+                var b = state[i];
+                chars[i * 2] = lookup[b >> 4];
+                chars[i * 2 + 1] = lookup[b & 0xF];
+            }
+        });
     }
 
     /// <summary>

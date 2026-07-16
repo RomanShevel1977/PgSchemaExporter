@@ -1,5 +1,6 @@
 using PgSchemaExporter.Core.Migration;
 using PgSchemaExporter.Core.Models;
+using PgSchemaExporter.Core.Scripting;
 
 namespace PgSchemaExporter.Core.Diagramming;
 
@@ -97,7 +98,7 @@ public static class ErModelBuilder
         {
             var content = File.ReadAllText(file);
 
-            foreach (var statement in content.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            foreach (var statement in SqlTokenizer.SplitStatements(content))
             {
                 if (statement.IndexOf("ADD CONSTRAINT", StringComparison.OrdinalIgnoreCase) < 0)
                     continue;

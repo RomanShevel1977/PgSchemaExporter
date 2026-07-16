@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using PgSchemaExporter.Core.Diagnostics;
 using PgSchemaExporter.Core.Diff;
+using PgSchemaExporter.Core.Metadata;
 
 namespace PgSchemaExporter.Core.Drift;
 
@@ -14,7 +15,12 @@ namespace PgSchemaExporter.Core.Drift;
 /// </summary>
 public sealed class DriftDetector
 {
-    private readonly SchemaDiffer _differ = new();
+    private readonly SchemaDiffer _differ;
+
+    public DriftDetector(IMetadataProvider? metadataProvider = null)
+    {
+        _differ = new SchemaDiffer(metadataProvider);
+    }
 
     public async Task<DriftResult> DetectAsync(
         DriftOptions options,

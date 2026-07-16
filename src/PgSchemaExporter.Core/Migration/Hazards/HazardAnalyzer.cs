@@ -9,6 +9,9 @@ namespace PgSchemaExporter.Core.Migration.Hazards;
 /// </summary>
 public static partial class HazardAnalyzer
 {
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex WhitespaceRegex();
+
     [GeneratedRegex(@"\bDROP\s+(FOREIGN\s+)?TABLE\b", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex DropTableRegex();
 
@@ -41,7 +44,7 @@ public static partial class HazardAnalyzer
         foreach (var statement in statements)
         {
             var sql = statement.Sql;
-            var single = Regex.Replace(sql.Replace("\r\n", " ").Replace('\n', ' '), @"\s+", " ").Trim();
+            var single = WhitespaceRegex().Replace(sql, " ").Trim();
 
             if (DropTableRegex().IsMatch(sql))
             {

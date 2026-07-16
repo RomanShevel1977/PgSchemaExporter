@@ -1,7 +1,11 @@
+using System.Text;
+
 namespace PgSchemaExporter.Core.Scripting;
 
 public static class SqlIdentifier
 {
+    private static readonly HashSet<char> InvalidFileNameChars = new(Path.GetInvalidFileNameChars());
+
     public static string Quote(string identifier)
     {
         return "\"" + identifier.Replace("\"", "\"\"") + "\"";
@@ -14,8 +18,10 @@ public static class SqlIdentifier
 
     public static string SafeFileName(string value)
     {
-        var invalid = Path.GetInvalidFileNameChars();
-        var chars = value.Select(ch => invalid.Contains(ch) ? '_' : ch).ToArray();
-        return new string(chars);
+        var sb = new StringBuilder(value.Length);
+        foreach (var ch in value)
+            sb.Append(InvalidFileNameChars.Contains(ch) ? '_' : ch);
+
+        return sb.ToString();
     }
 }

@@ -1,4 +1,5 @@
 using System.Text;
+using PgSchemaExporter.Core.Scripting;
 
 namespace PgSchemaExporter.Core.Migration;
 
@@ -126,7 +127,7 @@ public static class SqlDropBuilder
         if (open < 0)
             return null;
 
-        var close = FindMatchingParen(sql, open);
+        var close = SqlTokenizer.FindMatchingParen(sql, open);
         if (close < 0)
             return null;
 
@@ -264,7 +265,7 @@ public static class SqlDropBuilder
         if (string.IsNullOrWhiteSpace(args))
             return "";
 
-        var parts = SplitTopLevelCommas(args);
+        var parts = SqlTokenizer.SplitTopLevel(args);
         var cleaned = new List<string>();
 
         foreach (var part in parts)
@@ -282,90 +283,6 @@ public static class SqlDropBuilder
         }
 
         return string.Join(", ", cleaned);
-    }
-
-    private static List<string> SplitTopLevelCommas(string text)
-    {
-        var parts = new List<string>();
-        var sb = new StringBuilder();
-        var depth = 0;
-        var inSingle = false;
-        var inDouble = false;
-
-        foreach (var c in text)
-        {
-            if (inSingle)
-            {
-                sb.Append(c);
-                if (c == '\'') inSingle = false;
-                continue;
-            }
-
-            if (inDouble)
-            {
-                sb.Append(c);
-                if (c == '"') inDouble = false;
-                continue;
-            }
-
-            switch (c)
-            {
-                case '\'': inSingle = true; sb.Append(c); break;
-                case '"': inDouble = true; sb.Append(c); break;
-                case '(': depth++; sb.Append(c); break;
-                case ')': depth--; sb.Append(c); break;
-                case ',' when depth == 0:
-                    parts.Add(sb.ToString());
-                    sb.Clear();
-                    break;
-                default:
-                    sb.Append(c);
-                    break;
-            }
-        }
-
-        if (sb.Length > 0)
-            parts.Add(sb.ToString());
-
-        return parts;
-    }
-
-    private static int FindMatchingParen(string text, int openIndex)
-    {
-        var depth = 0;
-        var inSingle = false;
-        var inDouble = false;
-
-        for (var i = openIndex; i < text.Length; i++)
-        {
-            var c = text[i];
-
-            if (inSingle)
-            {
-                if (c == '\'') inSingle = false;
-                continue;
-            }
-
-            if (inDouble)
-            {
-                if (c == '"') inDouble = false;
-                continue;
-            }
-
-            switch (c)
-            {
-                case '\'': inSingle = true; break;
-                case '"': inDouble = true; break;
-                case '(': depth++; break;
-                case ')':
-                    depth--;
-                    if (depth == 0)
-                        return i;
-                    break;
-            }
-        }
-
-        return -1;
     }
 
     private static int IndexAfterWord(string text, string word)

@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using PgSchemaExporter.Core.Scripting;
 
 namespace PgSchemaExporter.Core.Migration;
@@ -11,7 +10,7 @@ namespace PgSchemaExporter.Core.Migration;
 /// </summary>
 public sealed class MigrationGenerator
 {
-    private readonly SqlStatementSplitter _splitter = new();
+    private readonly SqlStatementCache _statementCache = new();
 
     public MigrationScript Generate(MigrationOptions options)
     {
@@ -194,7 +193,15 @@ public sealed class MigrationGenerator
         }
     }
 
-    private IReadOnlyList<string> SplitStatements(string content) => _splitter.Split(content);
+    private IReadOnlyList<string> SplitStatements(string content)
+    {
+        return _statementCache.SplitStatements(content);
+    }
+
+    private string NormalizeStatement(string statement)
+    {
+        return _statementCache.NormalizeStatement(statement);
+    }
 
     private static bool IsDestructiveDrop(MigrationObjectKind kind) => kind switch
     {
@@ -207,7 +214,7 @@ public sealed class MigrationGenerator
     };
 
     private static bool IsMaterializedView(string content)
-        => Regex.IsMatch(content, @"\bMATERIALIZED\b", RegexOptions.IgnoreCase);
+        => content.AsSpan().Contains("MATERIALIZED".AsSpan(), StringComparison.OrdinalIgnoreCase);
 
     private static Dictionary<string, string> Enumerate(string root)
     {
@@ -230,6 +237,4 @@ public sealed class MigrationGenerator
     private static string Normalize(string text)
         => text.Replace("\r\n", "\n").Replace('\r', '\n').TrimEnd('\n');
 
-    private static string NormalizeStatement(string statement)
-        => Regex.Replace(statement.Trim(), @"\s+", " ");
 }

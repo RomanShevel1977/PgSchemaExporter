@@ -1,3 +1,5 @@
+using System.Buffers;
+
 namespace PgSchemaExporter.Core.Diff;
 
 /// <summary>
@@ -8,52 +10,118 @@ namespace PgSchemaExporter.Core.Diff;
 /// </summary>
 public static class LineDiffer
 {
+    // Direction arrows stored for backtracking.
+    // 0 = diagonal (context), 1 = down (removed from left), 2 = right (added from right).
+    private const byte Diagonal = 0;
+    private const byte Down = 1;
+    private const byte Right = 2;
+
     public static IReadOnlyList<DiffLine> Diff(string[] left, string[] right)
     {
         var n = left.Length;
         var m = right.Length;
 
-        // lcs[i, j] = length of the LCS of left[i..] and right[j..].
-        var lcs = new int[n + 1, m + 1];
-        for (var i = n - 1; i >= 0; i--)
+        if (n == 0 && m == 0)
+            return Array.Empty<DiffLine>();
+
+        // Fast path: completely disjoint or fully equal arrays.
+        if (n == 0)
         {
-            for (var j = m - 1; j >= 0; j--)
-            {
-                lcs[i, j] = left[i] == right[j]
-                    ? lcs[i + 1, j + 1] + 1
-                    : Math.Max(lcs[i + 1, j], lcs[i, j + 1]);
-            }
+            var allAdded = new List<DiffLine>(m);
+            for (var i = 0; i < m; i++)
+                allAdded.Add(new DiffLine { Kind = DiffLineKind.Added, Text = right[i] });
+            return allAdded;
         }
 
-        var result = new List<DiffLine>();
-        int x = 0, y = 0;
-
-        while (x < n && y < m)
+        if (m == 0)
         {
-            if (left[x] == right[y])
-            {
-                result.Add(new DiffLine { Kind = DiffLineKind.Context, Text = left[x] });
-                x++;
-                y++;
-            }
-            else if (lcs[x + 1, y] >= lcs[x, y + 1])
-            {
-                result.Add(new DiffLine { Kind = DiffLineKind.Removed, Text = left[x] });
-                x++;
-            }
-            else
-            {
-                result.Add(new DiffLine { Kind = DiffLineKind.Added, Text = right[y] });
-                y++;
-            }
+            var allRemoved = new List<DiffLine>(n);
+            for (var i = 0; i < n; i++)
+                allRemoved.Add(new DiffLine { Kind = DiffLineKind.Removed, Text = left[i] });
+            return allRemoved;
         }
 
-        while (x < n)
-            result.Add(new DiffLine { Kind = DiffLineKind.Removed, Text = left[x++] });
+        var result = new List<DiffLine>(n + m);
 
-        while (y < m)
-            result.Add(new DiffLine { Kind = DiffLineKind.Added, Text = right[y++] });
+        // Only one row of LCS values plus a previous row is needed for the fill.
+        var previous = ArrayPool<int>.Shared.Rent(m + 1);
+        var current = ArrayPool<int>.Shared.Rent(m + 1);
+        Array.Fill(previous, 0, 0, m + 1);
 
-        return result;
+        // Directions are one byte per cell instead of four bytes for the LCS matrix.
+        var directionsLength = n * m;
+        var directions = directionsLength > 0
+            ? ArrayPool<byte>.Shared.Rent(directionsLength)
+            : Array.Empty<byte>();
+
+        try
+        {
+            for (var i = n - 1; i >= 0; i--)
+            {
+                current[m] = 0;
+
+                for (var j = m - 1; j >= 0; j--)
+                {
+                    if (left[i] == right[j])
+                    {
+                        current[j] = previous[j + 1] + 1;
+                        directions[i * m + j] = Diagonal;
+                    }
+                    else if (previous[j] >= current[j + 1])
+                    {
+                        current[j] = previous[j];
+                        directions[i * m + j] = Down;
+                    }
+                    else
+                    {
+                        current[j] = current[j + 1];
+                        directions[i * m + j] = Right;
+                    }
+                }
+
+                // Swap rows for the next iteration.
+                (previous, current) = (current, previous);
+            }
+
+            // Backtrack from (0, 0) using the stored directions.
+            var x = 0;
+            var y = 0;
+
+            while (x < n && y < m)
+            {
+                var dir = directions[x * m + y];
+                if (dir == Diagonal)
+                {
+                    result.Add(new DiffLine { Kind = DiffLineKind.Context, Text = left[x] });
+                    x++;
+                    y++;
+                }
+                else if (dir == Down)
+                {
+                    result.Add(new DiffLine { Kind = DiffLineKind.Removed, Text = left[x] });
+                    x++;
+                }
+                else
+                {
+                    result.Add(new DiffLine { Kind = DiffLineKind.Added, Text = right[y] });
+                    y++;
+                }
+            }
+
+            while (x < n)
+                result.Add(new DiffLine { Kind = DiffLineKind.Removed, Text = left[x++] });
+
+            while (y < m)
+                result.Add(new DiffLine { Kind = DiffLineKind.Added, Text = right[y++] });
+
+            return result;
+        }
+        finally
+        {
+            ArrayPool<int>.Shared.Return(previous);
+            ArrayPool<int>.Shared.Return(current);
+            if (directionsLength > 0)
+                ArrayPool<byte>.Shared.Return(directions);
+        }
     }
 }

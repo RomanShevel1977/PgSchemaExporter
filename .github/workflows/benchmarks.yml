@@ -1,0 +1,43 @@
+name: Benchmarks
+
+on:
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: 'BenchmarkDotNet filter expression (default: *)'
+        required: false
+        default: '*'
+  pull_request:
+    paths:
+      - 'src/**/*.cs'
+      - 'tests/PgSchemaExporter.Benchmarks/**'
+
+jobs:
+  benchmark:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore tests/PgSchemaExporter.Benchmarks/PgSchemaExporter.Benchmarks.csproj
+
+      - name: Run benchmarks
+        run: |
+          dotnet run -c Release --project tests/PgSchemaExporter.Benchmarks/PgSchemaExporter.Benchmarks.csproj -- --filter '${{ github.event.inputs.filter || '*' }}'
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results
+          path: |
+            BenchmarkDotNet.Artifacts/results/*.md
+            BenchmarkDotNet.Artifacts/results/*.csv
+            BenchmarkDotNet.Artifacts/results/*.html

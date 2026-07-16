@@ -1,3 +1,4 @@
+using System.Text;
 using PgSchemaExporter.Core.Scripting;
 
 namespace PgSchemaExporter.Core.Migration;
@@ -41,14 +42,31 @@ public sealed class MigrationWriter
         if (string.IsNullOrWhiteSpace(name))
             return "";
 
-        var chars = name.Trim().ToLowerInvariant()
-            .Select(c => char.IsLetterOrDigit(c) ? c : '_')
-            .ToArray();
+        var trimmed = name.Trim().ToLowerInvariant();
+        var sb = new StringBuilder(trimmed.Length);
+        var previous = '\0';
 
-        var slug = new string(chars).Trim('_');
-        while (slug.Contains("__"))
-            slug = slug.Replace("__", "_");
+        foreach (var c in trimmed)
+        {
+            var mapped = char.IsLetterOrDigit(c) ? c : '_';
+            if (mapped == '_' && previous == '_')
+                continue;
 
-        return SqlIdentifier.SafeFileName(slug);
+            sb.Append(mapped);
+            previous = mapped;
+        }
+
+        var start = 0;
+        while (start < sb.Length && sb[start] == '_')
+            start++;
+
+        var end = sb.Length - 1;
+        while (end >= start && sb[end] == '_')
+            end--;
+
+        if (start > end)
+            return "";
+
+        return sb.ToString(start, end - start + 1);
     }
 }

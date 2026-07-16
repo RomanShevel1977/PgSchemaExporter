@@ -13,6 +13,13 @@ namespace PgSchemaExporter.Core.Diff;
 /// </summary>
 public sealed class LiveSchemaExporter
 {
+    private readonly IMetadataProvider? _metadataProvider;
+
+    public LiveSchemaExporter(IMetadataProvider? metadataProvider = null)
+    {
+        _metadataProvider = metadataProvider;
+    }
+
     public async Task<string> ExportToTempDirectoryAsync(
         string connectionString,
         ExportOptions exportOptions,
@@ -23,7 +30,7 @@ public sealed class LiveSchemaExporter
         var tempDir = Path.Combine(Path.GetTempPath(), "pgschema-diff-" + Guid.NewGuid().ToString("n"));
         Directory.CreateDirectory(tempDir);
 
-        var provider = new PostgresMetadataProvider();
+        var provider = _metadataProvider ?? new PostgresMetadataProvider();
         var model = await provider.LoadAsync(connectionString, exportOptions, progress, logger, cancellationToken);
 
         var writer = new SchemaFileWriter();
