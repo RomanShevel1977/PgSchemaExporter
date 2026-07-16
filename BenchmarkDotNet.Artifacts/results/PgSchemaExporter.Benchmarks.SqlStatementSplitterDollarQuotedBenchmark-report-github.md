@@ -10,6 +10,6 @@ Job=ShortRun  IterationCount=3  LaunchCount=1
 WarmupCount=3  
 
 ```
-| Method  | Mean     | Error    | StdDev  | Gen0      | Gen1     | Allocated |
-|-------- |---------:|---------:|--------:|----------:|---------:|----------:|
-| Compute | 181.2 ms | 75.11 ms | 4.12 ms | 1000.0000 | 666.6667 |   8.87 MB |
+| Method | Mean     | Error    | StdDev   | Allocated |
+|------- |---------:|---------:|---------:|----------:|
+| Split  | 47.00 μs | 35.79 μs | 1.962 μs |         - |
