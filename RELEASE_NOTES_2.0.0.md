@@ -2,10 +2,6 @@
 
 **Release date:** 2026-07-17
 
-> This is a major release that delivers the full set of prioritized recommendations from `ASSESSMENT_REPORT.md`, a complete CLI architecture refactor, and broad performance and test coverage improvements.
-
----
-
 ## Highlights
 
 - **CLI architecture rebuilt** — `Program.cs` is now a thin bootstrap; every command is implemented as an `ICommand` handler in `src/PgSchemaExporter.Cli/Commands/`.
