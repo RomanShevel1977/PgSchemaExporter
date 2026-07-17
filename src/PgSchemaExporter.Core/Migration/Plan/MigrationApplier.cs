@@ -175,8 +175,17 @@ public sealed class MigrationApplier
 
     private static string FirstLine(string sql)
     {
-        var normalized = sql.Replace("\r\n", "\n").Replace('\r', '\n').Trim();
-        var newline = normalized.IndexOf('\n');
-        return newline < 0 ? normalized : normalized[..newline] + " …";
+        var span = sql.AsSpan().Trim();
+
+        for (var i = 0; i < span.Length; i++)
+        {
+            if (span[i] == '\r' || span[i] == '\n')
+            {
+                var line = span[..i].TrimEnd();
+                return line.Length <= 160 ? line.ToString() + " …" : line[..160].ToString() + "…";
+            }
+        }
+
+        return span.Length <= 160 ? span.ToString() : span[..160].ToString() + "…";
     }
 }

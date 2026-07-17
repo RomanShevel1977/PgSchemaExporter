@@ -1,8 +1,41 @@
 using System.Text;
 using System.Text.Json;
 using PgSchemaExporter.Core.Options;
+using PgSchemaExporter.Core.Serialization;
 
 namespace PgSchemaExporter.Core.Diff;
+
+public sealed class SchemaDiffReportDto
+{
+    public IReadOnlyList<string> Added { get; init; } = [];
+    public IReadOnlyList<string> Removed { get; init; } = [];
+    public IReadOnlyList<string> Changed { get; init; } = [];
+    public IReadOnlyList<string> Unchanged { get; init; } = [];
+    public bool HasDifferences { get; init; }
+    public IReadOnlyList<SchemaDiffStatDto> Statistics { get; init; } = [];
+    public IReadOnlyList<SchemaFileDiffDto> FileDiffs { get; init; } = [];
+}
+
+public sealed class SchemaDiffStatDto
+{
+    public string ObjectType { get; init; } = "";
+    public int Added { get; init; }
+    public int Removed { get; init; }
+    public int Changed { get; init; }
+    public int Total { get; init; }
+}
+
+public sealed class SchemaFileDiffDto
+{
+    public string Path { get; init; } = "";
+    public IReadOnlyList<SchemaDiffLineDto> Lines { get; init; } = [];
+}
+
+public sealed class SchemaDiffLineDto
+{
+    public string Kind { get; init; } = "";
+    public string Text { get; init; } = "";
+}
 
 public sealed class SchemaDiffReportWriter
 {
@@ -77,37 +110,33 @@ public sealed class SchemaDiffReportWriter
 
     private static string BuildJsonReport(SchemaDiffResult result)
     {
-        var json = new
+        var dto = new SchemaDiffReportDto
         {
-            added = result.Added,
-            removed = result.Removed,
-            changed = result.Changed,
-            unchanged = result.Unchanged,
-            hasDifferences = result.HasDifferences,
-            statistics = result.Statistics.Select(s => new
+            Added = result.Added,
+            Removed = result.Removed,
+            Changed = result.Changed,
+            Unchanged = result.Unchanged,
+            HasDifferences = result.HasDifferences,
+            Statistics = result.Statistics.Select(s => new SchemaDiffStatDto
             {
-                objectType = s.ObjectType,
-                added = s.Added,
-                removed = s.Removed,
-                changed = s.Changed,
-                total = s.Total
-            }),
-            fileDiffs = result.FileDiffs.Select(f => new
+                ObjectType = s.ObjectType,
+                Added = s.Added,
+                Removed = s.Removed,
+                Changed = s.Changed,
+                Total = s.Total
+            }).ToList(),
+            FileDiffs = result.FileDiffs.Select(f => new SchemaFileDiffDto
             {
-                path = f.Path,
-                lines = f.Lines.Select(l => new
+                Path = f.Path,
+                Lines = f.Lines.Select(l => new SchemaDiffLineDto
                 {
-                    kind = l.Kind.ToString().ToLowerInvariant(),
-                    text = l.Text
-                })
-            })
+                    Kind = l.Kind.ToString().ToLowerInvariant(),
+                    Text = l.Text
+                }).ToList()
+            }).ToList()
         };
 
-        return JsonSerializer.Serialize(json, new JsonSerializerOptions
-        {
-            WriteIndented = true,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        });
+        return JsonSerializer.Serialize(dto, PgSchemaExporterJsonContext.Default.SchemaDiffReportDto);
     }
 
     private static void AppendSection(StringBuilder sb, string title, IReadOnlyList<string> items, string marker)
@@ -225,10 +254,19 @@ public sealed class SchemaDiffReportWriter
 
     private static string HtmlEncode(string value)
     {
-        return value
-            .Replace("&", "&amp;")
-            .Replace("<", "&lt;")
-            .Replace(">", "&gt;")
-            .Replace("\"", "&quot;");
+        var sb = new StringBuilder(value.Length);
+        foreach (var c in value)
+        {
+            switch (c)
+            {
+                case '&': sb.Append("&amp;"); break;
+                case '<': sb.Append("&lt;"); break;
+                case '>': sb.Append("&gt;"); break;
+                case '"': sb.Append("&quot;"); break;
+                default: sb.Append(c); break;
+            }
+        }
+
+        return sb.Length == value.Length ? value : sb.ToString();
     }
 }

@@ -8,7 +8,7 @@ public sealed class ExportOptions
     public string[] ExcludeSchemas { get; set; } = ["pg_catalog", "information_schema"];
     public bool CleanOutputDirectory { get; set; }
     public bool DryRun { get; set; }
-    public bool Parallel { get; set; }
+    public bool Parallel { get; set; } = true;
     public IncludeOptions Include { get; set; } = new();
     public FormatOptions Format { get; set; } = new();
 

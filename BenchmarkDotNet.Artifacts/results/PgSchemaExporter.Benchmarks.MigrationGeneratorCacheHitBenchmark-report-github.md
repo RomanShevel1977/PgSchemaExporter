@@ -12,4 +12,4 @@ WarmupCount=3
 ```
 | Method   | Mean     | Error    | StdDev   | Gen0     | Allocated |
 |--------- |---------:|---------:|---------:|---------:|----------:|
-| Generate | 36.99 ms | 7.349 ms | 0.403 ms | 142.8571 |    1.7 MB |
+| Generate | 37.04 ms | 8.546 ms | 0.468 ms | 214.2857 |   1.72 MB |

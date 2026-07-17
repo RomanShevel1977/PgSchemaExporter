@@ -1,5 +1,3 @@
-using System.Text.RegularExpressions;
-
 namespace PgSchemaExporter.Core.Migration;
 
 /// <summary>
@@ -9,14 +7,47 @@ namespace PgSchemaExporter.Core.Migration;
 /// when a user- or plan-supplied value is embedded in a <c>SET ... = '...'</c>
 /// statement.
 /// </summary>
-public static partial class MigrationTimeout
+public static class MigrationTimeout
 {
     // A bare integer is milliseconds; an optional unit may follow (us, ms, s, min, h, d).
-    [GeneratedRegex(@"^\d+\s*(us|ms|s|min|h|d)?$", RegexOptions.IgnoreCase)]
-    private static partial Regex TimeoutRegex();
-
     public static bool IsValid(string value)
-        => !string.IsNullOrWhiteSpace(value) && TimeoutRegex().IsMatch(value.Trim());
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        var span = value.AsSpan().Trim();
+        if (span.IsEmpty)
+            return false;
+
+        var i = 0;
+        while (i < span.Length && char.IsDigit(span[i]))
+            i++;
+
+        if (i == 0)
+            return false;
+
+        while (i < span.Length && char.IsWhiteSpace(span[i]))
+            i++;
+
+        if (i == span.Length)
+            return true;
+
+        var unit = span[i..];
+        if (unit.Equals("us", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (unit.Equals("ms", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (unit.Equals("s", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (unit.Equals("min", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (unit.Equals("h", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (unit.Equals("d", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return false;
+    }
 
     /// <summary>
     /// Throws <see cref="ArgumentException"/> when <paramref name="value"/> is set

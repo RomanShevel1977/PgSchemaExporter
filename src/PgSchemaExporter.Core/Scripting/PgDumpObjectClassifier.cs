@@ -1,26 +1,10 @@
 using System.Text;
-using System.Text.RegularExpressions;
 using PgSchemaExporter.Core.Models;
 
 namespace PgSchemaExporter.Core.Scripting;
 
 public sealed class PgDumpObjectClassifier
 {
-    private static readonly Regex CreateSchemaRegex = new(@"^\s*CREATE\s+SCHEMA\s+(?:IF\s+NOT\s+EXISTS\s+)?(?<name>[^;\s]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex CreateExtensionRegex = new(@"^\s*CREATE\s+EXTENSION\s+(?:IF\s+NOT\s+EXISTS\s+)?(?<name>[^;\s]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex CreateTypeRegex = new(@"^\s*CREATE\s+TYPE\s+(?<name>[^\s]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex CreateSequenceRegex = new(@"^\s*CREATE\s+SEQUENCE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?<name>[^\s]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex CreateTableRegex = new(@"^\s*CREATE\s+(?:UNLOGGED\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?<name>[^\s(]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex AlterTableConstraintRegex = new(@"^\s*ALTER\s+TABLE\s+(?:ONLY\s+)?(?<table>[^\s]+)\s+ADD\s+CONSTRAINT\s+(?<constraint>[^\s]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex CreateIndexRegex = new(@"^\s*CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?(?<name>[^\s]+)\s+ON\s+(?:ONLY\s+)?(?<table>[^\s(]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex CreateViewRegex = new(@"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?VIEW\s+(?<name>[^\s]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex CreateMaterializedViewRegex = new(@"^\s*CREATE\s+MATERIALIZED\s+VIEW\s+(?<name>[^\s]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex CreateFunctionRegex = new(@"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?<name>[^\s(]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex CreateTriggerRegex = new(@"^\s*CREATE\s+TRIGGER\s+(?<name>[^\s]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex CreatePolicyRegex = new(@"^\s*CREATE\s+POLICY\s+(?<name>[^\s]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex CommentRegex = new(@"^\s*COMMENT\s+ON\s+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex GrantRegex = new(@"^\s*GRANT\s+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
     public SqlDumpObject Classify(string statement, int order)
     {
         var normalized = RemovePgDumpNoise(statement).Trim();
@@ -28,73 +12,180 @@ public sealed class PgDumpObjectClassifier
         if (string.IsNullOrWhiteSpace(normalized))
             return Other(order, statement);
 
-        if (TryMatch(normalized, CreateExtensionRegex, "name", out var extensionName))
-            return Build(SqlObjectType.Extension, extensionName, normalized, order);
+        var firstWord = SqlTokenizer.ReadIdentifier(normalized, 0, out var pos, unquote: false);
+        if (firstWord is null)
+            return Other(order, normalized);
 
-        if (TryMatch(normalized, CreateSchemaRegex, "name", out var schemaName))
-            return new SqlDumpObject { Type = SqlObjectType.Schema, Schema = CleanIdentifier(schemaName), Name = CleanIdentifier(schemaName), Statement = normalized, Order = order };
+        if (firstWord.Equals("CREATE", StringComparison.OrdinalIgnoreCase))
+            return ClassifyCreate(normalized, pos, order);
 
-        if (TryMatch(normalized, CreateTypeRegex, "name", out var typeName))
-            return Build(SqlObjectType.Type, typeName, normalized, order);
+        if (firstWord.Equals("ALTER", StringComparison.OrdinalIgnoreCase))
+            return ClassifyAlter(normalized, pos, order);
 
-        if (TryMatch(normalized, CreateSequenceRegex, "name", out var sequenceName))
-            return Build(SqlObjectType.Sequence, sequenceName, normalized, order);
-
-        if (TryMatch(normalized, CreateTableRegex, "name", out var tableName))
-            return Build(SqlObjectType.Table, tableName, normalized, order);
-
-        var constraintMatch = AlterTableConstraintRegex.Match(normalized);
-        if (constraintMatch.Success)
-        {
-            var (schema, parent) = SplitQualifiedName(constraintMatch.Groups["table"].Value);
-            return new SqlDumpObject
-            {
-                Type = SqlObjectType.Constraint,
-                Schema = schema,
-                ParentName = parent,
-                Name = CleanIdentifier(constraintMatch.Groups["constraint"].Value),
-                Statement = normalized,
-                Order = order
-            };
-        }
-
-        var indexMatch = CreateIndexRegex.Match(normalized);
-        if (indexMatch.Success)
-        {
-            var (schema, parent) = SplitQualifiedName(indexMatch.Groups["table"].Value);
-            return new SqlDumpObject
-            {
-                Type = SqlObjectType.Index,
-                Schema = schema,
-                ParentName = parent,
-                Name = CleanIdentifier(indexMatch.Groups["name"].Value),
-                Statement = normalized,
-                Order = order
-            };
-        }
-
-        if (TryMatch(normalized, CreateMaterializedViewRegex, "name", out var matViewName))
-            return Build(SqlObjectType.View, matViewName, normalized, order);
-
-        if (TryMatch(normalized, CreateViewRegex, "name", out var viewName))
-            return Build(SqlObjectType.View, viewName, normalized, order);
-
-        if (TryMatch(normalized, CreateFunctionRegex, "name", out var functionName))
-            return Build(SqlObjectType.Function, functionName, normalized, order);
-
-        if (TryMatch(normalized, CreateTriggerRegex, "name", out var triggerName))
-            return new SqlDumpObject { Type = SqlObjectType.Trigger, Schema = "triggers", Name = CleanIdentifier(triggerName), Statement = normalized, Order = order };
-
-        if (TryMatch(normalized, CreatePolicyRegex, "name", out var policyName))
-            return new SqlDumpObject { Type = SqlObjectType.Policy, Schema = "policies", Name = CleanIdentifier(policyName), Statement = normalized, Order = order };
-
-        if (CommentRegex.IsMatch(normalized))
+        if (firstWord.Equals("COMMENT", StringComparison.OrdinalIgnoreCase))
             return new SqlDumpObject { Type = SqlObjectType.Comment, Schema = "comments", Name = $"comment_{order:D5}", Statement = normalized, Order = order };
 
-        if (GrantRegex.IsMatch(normalized))
+        if (firstWord.Equals("GRANT", StringComparison.OrdinalIgnoreCase))
             return new SqlDumpObject { Type = SqlObjectType.Grant, Schema = "grants", Name = $"grant_{order:D5}", Statement = normalized, Order = order };
 
         return Other(order, normalized);
+    }
+
+    private static SqlDumpObject ClassifyCreate(string sql, int pos, int order)
+    {
+        pos = SkipCreateModifiers(sql, pos);
+
+        var objectType = SqlTokenizer.ReadIdentifier(sql, pos, out var nextPos, unquote: false);
+        if (objectType is null)
+            return Other(order, sql);
+
+        if (objectType.Equals("SCHEMA", StringComparison.OrdinalIgnoreCase))
+        {
+            var name = ReadName(sql, nextPos);
+            var clean = name is null ? "" : CleanIdentifier(name);
+            return new SqlDumpObject { Type = SqlObjectType.Schema, Schema = clean, Name = clean, Statement = sql, Order = order };
+        }
+
+        if (objectType.Equals("EXTENSION", StringComparison.OrdinalIgnoreCase))
+            return Build(SqlObjectType.Extension, ReadName(sql, nextPos) ?? "", sql, order);
+
+        if (objectType.Equals("TYPE", StringComparison.OrdinalIgnoreCase))
+            return Build(SqlObjectType.Type, ReadName(sql, nextPos) ?? "", sql, order);
+
+        if (objectType.Equals("SEQUENCE", StringComparison.OrdinalIgnoreCase))
+            return Build(SqlObjectType.Sequence, ReadName(sql, nextPos) ?? "", sql, order);
+
+        if (objectType.Equals("TABLE", StringComparison.OrdinalIgnoreCase))
+        {
+            var name = ReadName(sql, nextPos);
+            if (name is not null)
+                return Build(SqlObjectType.Table, name, sql, order);
+        }
+
+        if (objectType.Equals("INDEX", StringComparison.OrdinalIgnoreCase))
+            return ClassifyIndex(sql, nextPos, order);
+
+        if (objectType.Equals("VIEW", StringComparison.OrdinalIgnoreCase))
+            return Build(SqlObjectType.View, ReadName(sql, nextPos) ?? "", sql, order);
+
+        if (objectType.Equals("FUNCTION", StringComparison.OrdinalIgnoreCase))
+            return Build(SqlObjectType.Function, ReadName(sql, nextPos) ?? "", sql, order);
+
+        if (objectType.Equals("TRIGGER", StringComparison.OrdinalIgnoreCase))
+            return new SqlDumpObject { Type = SqlObjectType.Trigger, Schema = "triggers", Name = CleanIdentifier(ReadName(sql, nextPos) ?? ""), Statement = sql, Order = order };
+
+        if (objectType.Equals("POLICY", StringComparison.OrdinalIgnoreCase))
+            return new SqlDumpObject { Type = SqlObjectType.Policy, Schema = "policies", Name = CleanIdentifier(ReadName(sql, nextPos) ?? ""), Statement = sql, Order = order };
+
+        return Other(order, sql);
+    }
+
+    private static SqlDumpObject ClassifyAlter(string sql, int pos, int order)
+    {
+        var objectType = SqlTokenizer.ReadIdentifier(sql, pos, out var nextPos, unquote: false);
+        if (objectType is null || !objectType.Equals("TABLE", StringComparison.OrdinalIgnoreCase))
+            return Other(order, sql);
+
+        var tableName = ReadName(sql, nextPos);
+        if (tableName is null)
+            return Other(order, sql);
+
+        var addConstraintIndex = SqlTokenizer.IndexOfWord(sql, "ADD CONSTRAINT", pos, out var addConstraintLength);
+        if (addConstraintIndex < 0)
+            return Other(order, sql);
+
+        var afterConstraint = addConstraintIndex + addConstraintLength;
+        var remaining = sql[afterConstraint..].TrimStart();
+        var constraint = SqlTokenizer.ReadIdentifier(remaining, 0, out _);
+        if (constraint is null)
+            return Other(order, sql);
+
+        var (schema, parent) = SplitQualifiedName(tableName);
+        return new SqlDumpObject
+        {
+            Type = SqlObjectType.Constraint,
+            Schema = schema,
+            ParentName = parent,
+            Name = CleanIdentifier(constraint),
+            Statement = sql,
+            Order = order
+        };
+    }
+
+    private static SqlDumpObject ClassifyIndex(string sql, int pos, int order)
+    {
+        var remaining = sql[pos..].TrimStart();
+
+        if (SqlTokenizer.StartsWithWord(remaining, "CONCURRENTLY"))
+            remaining = remaining["CONCURRENTLY".Length..].TrimStart();
+
+        if (SqlTokenizer.StartsWithWord(remaining, "IF NOT EXISTS"))
+            remaining = remaining["IF NOT EXISTS".Length..].TrimStart();
+
+        var name = SqlTokenizer.ReadIdentifier(remaining, 0, out _);
+        if (name is null)
+            return Other(order, sql);
+
+        var onIndex = SqlTokenizer.IndexOfWord(sql, "ON");
+        if (onIndex >= 0)
+        {
+            var afterOn = onIndex + "ON".Length;
+            var onRemaining = SqlTokenizer.SkipLeadingNoise(sql[afterOn..]);
+            var table = SqlTokenizer.ReadIdentifier(onRemaining, 0, out _);
+            if (table is not null)
+            {
+                var (schema, parent) = SplitQualifiedName(table);
+                var (_, indexName) = SplitQualifiedName(name);
+                return new SqlDumpObject
+                {
+                    Type = SqlObjectType.Index,
+                    Schema = schema,
+                    ParentName = parent,
+                    Name = indexName,
+                    Statement = sql,
+                    Order = order
+                };
+            }
+        }
+
+        var (_, nameOnly) = SplitQualifiedName(name);
+        return new SqlDumpObject { Type = SqlObjectType.Index, Schema = "public", Name = nameOnly, Statement = sql, Order = order };
+    }
+
+    private static int SkipCreateModifiers(string sql, int pos)
+    {
+        while (true)
+        {
+            var word = SqlTokenizer.ReadIdentifier(sql, pos, out var nextPos, unquote: false);
+            if (word is null)
+                return pos;
+
+            if (word.Equals("OR", StringComparison.OrdinalIgnoreCase))
+            {
+                var nextWord = SqlTokenizer.ReadIdentifier(sql, nextPos, out var afterNext, unquote: false);
+                if (nextWord is not null && nextWord.Equals("REPLACE", StringComparison.OrdinalIgnoreCase))
+                {
+                    pos = afterNext;
+                    continue;
+                }
+            }
+            else if (word.Equals("UNIQUE", StringComparison.OrdinalIgnoreCase) ||
+                     word.Equals("UNLOGGED", StringComparison.OrdinalIgnoreCase) ||
+                     word.Equals("FOREIGN", StringComparison.OrdinalIgnoreCase) ||
+                     word.Equals("MATERIALIZED", StringComparison.OrdinalIgnoreCase))
+            {
+                pos = nextPos;
+                continue;
+            }
+
+            return pos;
+        }
+    }
+
+    private static string? ReadName(string sql, int pos)
+    {
+        var remaining = SqlTokenizer.SkipLeadingNoise(sql[pos..]);
+        return SqlTokenizer.ReadIdentifier(remaining, 0, out _);
     }
 
     private static SqlDumpObject Other(int order, string statement)
@@ -108,18 +199,6 @@ public sealed class PgDumpObjectClassifier
         return new SqlDumpObject { Type = type, Schema = schema, Name = name, Statement = statement, Order = order };
     }
 
-    private static bool TryMatch(string statement, Regex regex, string groupName, out string value)
-    {
-        var match = regex.Match(statement);
-        if (match.Success)
-        {
-            value = match.Groups[groupName].Value;
-            return true;
-        }
-
-        value = "";
-        return false;
-    }
 
     private static string RemovePgDumpNoise(string statement)
     {

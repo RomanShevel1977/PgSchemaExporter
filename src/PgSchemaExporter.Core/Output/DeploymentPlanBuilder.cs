@@ -20,10 +20,15 @@ public sealed class DeploymentPlanBuilder
         var viewFiles = files.ViewFiles.ToDictionary(GetSchemaQualifiedNameFromFile, x => x, StringComparer.OrdinalIgnoreCase);
         var functionFiles = files.FunctionFiles.ToList();
 
+        var typeIndex = FileIndex.Build(typeFiles);
+        var sequenceIndex = FileIndex.Build(sequenceFiles);
+        var tableIndex = FileIndex.Build(tableFiles);
+        var viewIndex = FileIndex.Build(viewFiles);
+        var functionIndex = FileIndex.BuildFunctions(functionFiles);
+        var constraintIndex = FileIndex.BuildConstraints(files.ConstraintFiles);
+
         foreach (var extension in model.Extensions)
         {
-            // There is normally a single extensions file. If an extension is installed into a custom schema,
-            // that schema must exist before CREATE EXTENSION ... WITH SCHEMA can run.
             foreach (var extensionFile in extensionFiles)
                 AddDependency(dependencies, extensionFile, TryGetSchemaFile(schemaFiles, extension.Schema));
         }
@@ -44,45 +49,30 @@ public sealed class DeploymentPlanBuilder
         {
             var tableFile = TryGet(tableFiles, table.Schema, table.Name);
             AddDependency(dependencies, tableFile, TryGetSchemaFile(schemaFiles, table.Schema));
+            if (tableFile is null)
+                continue;
 
             foreach (var column in table.Columns)
             {
-                foreach (var type in model.Types)
-                {
-                    if (ReferencesObject(column.DataType, type.Schema, type.Name))
-                        AddDependency(dependencies, tableFile, TryGet(typeFiles, type.Schema, type.Name));
-                }
+                if (!string.IsNullOrWhiteSpace(column.DataType))
+                    ScanForReferences(column.DataType, dependencies, tableFile, typeIndex, FileIndex.Empty, FileIndex.Empty, FileIndex.Empty, functionRequiresCall: false);
 
                 if (!string.IsNullOrWhiteSpace(column.DefaultValue))
-                {
-                    foreach (var sequence in model.Sequences)
-                    {
-                        if (ReferencesObject(column.DefaultValue!, sequence.Schema, sequence.Name))
-                            AddDependency(dependencies, tableFile, TryGet(sequenceFiles, sequence.Schema, sequence.Name));
-                    }
-                }
+                    ScanForReferences(column.DefaultValue!, dependencies, tableFile, FileIndex.Empty, FileIndex.Empty, FileIndex.Empty, sequenceIndex, functionRequiresCall: false);
             }
         }
 
         foreach (var group in model.Constraints.GroupBy(x => new { x.Schema, x.TableName }))
         {
-            var constraintFile = files.ConstraintFiles.FirstOrDefault(x => x.StartsWith($"constraints/{Safe(group.Key.Schema)}.{Safe(group.Key.TableName)}.", StringComparison.OrdinalIgnoreCase));
+            var constraintKey = $"{Safe(group.Key.Schema)}.{Safe(group.Key.TableName)}";
+            var constraintFile = constraintIndex.Qualified.TryGetValue(constraintKey, out var constraintList) ? constraintList[0] : null;
             var tableFile = TryGet(tableFiles, group.Key.Schema, group.Key.TableName);
             AddDependency(dependencies, constraintFile, tableFile);
 
             foreach (var constraint in group)
             {
-                foreach (var table in model.Tables)
-                {
-                    if (ReferencesTable(constraint.Definition, table.Schema, table.Name))
-                    {
-                        // If constraint references another table (e.g., FOREIGN KEY), 
-                        // depend on that table's constraint file, not just the table
-                        var referencedConstraintFile = files.ConstraintFiles.FirstOrDefault(x =>
-                            x.StartsWith($"constraints/{Safe(table.Schema)}.{Safe(table.Name)}.", StringComparison.OrdinalIgnoreCase));
-                        AddDependency(dependencies, constraintFile, referencedConstraintFile ?? TryGet(tableFiles, table.Schema, table.Name));
-                    }
-                }
+                foreach (var referencedFile in FindReferencedTableFiles(constraint.Definition, tableIndex, constraintIndex))
+                    AddDependency(dependencies, constraintFile, referencedFile);
             }
         }
 
@@ -97,37 +87,8 @@ public sealed class DeploymentPlanBuilder
             var functionFile = functionFiles.FirstOrDefault(x => x.StartsWith($"functions/{Safe(function.Schema)}.{Safe(function.Name)}.", StringComparison.OrdinalIgnoreCase));
             AddDependency(dependencies, functionFile, TryGetSchemaFile(schemaFiles, function.Schema));
 
-            foreach (var type in model.Types)
-            {
-                if (ReferencesObject(function.Definition, type.Schema, type.Name))
-                    AddDependency(dependencies, functionFile, TryGet(typeFiles, type.Schema, type.Name));
-            }
-
-            foreach (var table in model.Tables)
-            {
-                if (ReferencesObject(function.Definition, table.Schema, table.Name))
-                    AddDependency(dependencies, functionFile, TryGet(tableFiles, table.Schema, table.Name));
-            }
-
-            foreach (var otherFunction in model.Functions.Where(x =>
-                !(x.Schema.Equals(function.Schema, StringComparison.OrdinalIgnoreCase) &&
-                  x.Name.Equals(function.Name, StringComparison.OrdinalIgnoreCase))))
-            {
-                if (ReferencesRoutine(function.Definition, otherFunction.Schema, otherFunction.Name))
-                {
-                    var otherFunctionFile = functionFiles.FirstOrDefault(x =>
-                        x.StartsWith($"functions/{Safe(otherFunction.Schema)}.{Safe(otherFunction.Name)}.",
-                            StringComparison.OrdinalIgnoreCase));
-
-                    AddDependency(dependencies, functionFile, otherFunctionFile);
-                }
-            }
-
-            foreach (var view in model.Views)
-            {
-                if (ReferencesObject(function.Definition, view.Schema, view.Name))
-                    AddDependency(dependencies, functionFile, TryGet(viewFiles, view.Schema, view.Name));
-            }
+            if (!string.IsNullOrEmpty(functionFile) && !string.IsNullOrEmpty(function.Definition))
+                ScanForReferences(function.Definition, dependencies, functionFile, typeIndex, tableIndex, viewIndex, functionIndex, functionRequiresCall: true);
         }
 
         foreach (var view in model.Views)
@@ -135,26 +96,8 @@ public sealed class DeploymentPlanBuilder
             var viewFile = TryGet(viewFiles, view.Schema, view.Name);
             AddDependency(dependencies, viewFile, TryGetSchemaFile(schemaFiles, view.Schema));
 
-            foreach (var table in model.Tables)
-            {
-                if (ReferencesObject(view.Definition, table.Schema, table.Name))
-                    AddDependency(dependencies, viewFile, TryGet(tableFiles, table.Schema, table.Name));
-            }
-
-            foreach (var otherView in model.Views.Where(x => !(x.Schema.Equals(view.Schema, StringComparison.OrdinalIgnoreCase) && x.Name.Equals(view.Name, StringComparison.OrdinalIgnoreCase))))
-            {
-                if (ReferencesObject(view.Definition, otherView.Schema, otherView.Name))
-                    AddDependency(dependencies, viewFile, TryGet(viewFiles, otherView.Schema, otherView.Name));
-            }
-
-            foreach (var function in model.Functions)
-            {
-                if (ReferencesObject(view.Definition, function.Schema, function.Name))
-                {
-                    var functionFile = functionFiles.FirstOrDefault(x => x.StartsWith($"functions/{Safe(function.Schema)}.{Safe(function.Name)}.", StringComparison.OrdinalIgnoreCase));
-                    AddDependency(dependencies, viewFile, functionFile);
-                }
-            }
+            if (!string.IsNullOrEmpty(viewFile) && !string.IsNullOrEmpty(view.Definition))
+                ScanForReferences(view.Definition, dependencies, viewFile, FileIndex.Empty, tableIndex, viewIndex, functionIndex, functionRequiresCall: false);
         }
 
         foreach (var trigger in model.Triggers)
@@ -162,14 +105,8 @@ public sealed class DeploymentPlanBuilder
             var triggerFile = files.TriggerFiles.FirstOrDefault(x => x.StartsWith($"triggers/{Safe(trigger.Schema)}.{Safe(trigger.TableName)}.{Safe(trigger.Name)}.", StringComparison.OrdinalIgnoreCase));
             AddDependency(dependencies, triggerFile, TryGet(tableFiles, trigger.TableSchema, trigger.TableName));
 
-            foreach (var function in model.Functions)
-            {
-                if (ReferencesRoutine(trigger.Definition, function.Schema, function.Name))
-                {
-                    var functionFile = functionFiles.FirstOrDefault(x => x.StartsWith($"functions/{Safe(function.Schema)}.{Safe(function.Name)}.", StringComparison.OrdinalIgnoreCase));
-                    AddDependency(dependencies, triggerFile, functionFile);
-                }
-            }
+            if (!string.IsNullOrEmpty(triggerFile) && !string.IsNullOrEmpty(trigger.Definition))
+                ScanForReferences(trigger.Definition, dependencies, triggerFile, FileIndex.Empty, FileIndex.Empty, FileIndex.Empty, functionIndex, functionRequiresCall: true);
         }
 
         foreach (var policy in model.Policies)
@@ -177,14 +114,8 @@ public sealed class DeploymentPlanBuilder
             var policyFile = files.PolicyFiles.FirstOrDefault(x => x.StartsWith($"policies/{Safe(policy.Schema)}.{Safe(policy.TableName)}.{Safe(policy.Name)}.", StringComparison.OrdinalIgnoreCase));
             AddDependency(dependencies, policyFile, TryGet(tableFiles, policy.TableSchema, policy.TableName));
 
-            foreach (var function in model.Functions)
-            {
-                if (ReferencesRoutine(policy.Definition, function.Schema, function.Name))
-                {
-                    var functionFile = functionFiles.FirstOrDefault(x => x.StartsWith($"functions/{Safe(function.Schema)}.{Safe(function.Name)}.", StringComparison.OrdinalIgnoreCase));
-                    AddDependency(dependencies, policyFile, functionFile);
-                }
-            }
+            if (!string.IsNullOrEmpty(policyFile) && !string.IsNullOrEmpty(policy.Definition))
+                ScanForReferences(policy.Definition, dependencies, policyFile, FileIndex.Empty, FileIndex.Empty, FileIndex.Empty, functionIndex, functionRequiresCall: true);
         }
 
         return BuildPlan(allFiles, dependencies);
@@ -354,135 +285,218 @@ public sealed class DeploymentPlanBuilder
         return parts.Length == 2 ? $"{parts[0]}.{parts[1]}" : name;
     }
 
-    private static bool ReferencesTable(string text, string schema, string table)
-    {
-        if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(table))
-            return false;
-
-        const string keyword = "REFERENCES";
-        int index = 0;
-        while ((index = text.IndexOf(keyword, index, StringComparison.OrdinalIgnoreCase)) >= 0)
-        {
-            int afterKeyword = index + keyword.Length;
-            bool leftBoundary = index == 0 || !IsWordChar(text[index - 1]);
-
-            if (leftBoundary && afterKeyword < text.Length && char.IsWhiteSpace(text[afterKeyword]))
-            {
-                int pos = afterKeyword;
-                while (pos < text.Length && char.IsWhiteSpace(text[pos]))
-                    pos++;
-
-                if (TryMatchQualifiedOrUnqualifiedName(text, pos, schema, table))
-                    return true;
-            }
-
-            index += keyword.Length;
-        }
-
-        return false;
-    }
-
-    private static bool ReferencesRoutine(string text, string schema, string name)
-    {
-        if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(name))
-            return false;
-
-        if (!string.IsNullOrEmpty(schema) && TryFindRoutineCall(text, $"{schema}.{name}"))
-            return true;
-
-        return TryFindRoutineCall(text, name);
-    }
-
-    private static bool ReferencesObject(string text, string schema, string name)
-    {
-        if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(name))
-            return false;
-
-        if (!string.IsNullOrEmpty(schema) && ContainsWord(text, $"{schema}.{name}"))
-            return true;
-
-        return ContainsWord(text, name);
-    }
-
-    private static bool ContainsWord(string text, string value)
-    {
-        if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(value))
-            return false;
-
-        int index = 0;
-        int valueLength = value.Length;
-        while ((index = text.IndexOf(value, index, StringComparison.OrdinalIgnoreCase)) >= 0)
-        {
-            bool leftBoundary = index == 0 || !IsWordChar(text[index - 1]);
-            bool rightBoundary = index + valueLength == text.Length || !IsWordChar(text[index + valueLength]);
-
-            if (leftBoundary && rightBoundary)
-                return true;
-
-            index += valueLength;
-        }
-
-        return false;
-    }
-
-    private static bool TryFindRoutineCall(string text, string value)
-    {
-        int index = 0;
-        int valueLength = value.Length;
-        while ((index = text.IndexOf(value, index, StringComparison.OrdinalIgnoreCase)) >= 0)
-        {
-            bool leftBoundary = index == 0 || !IsWordChar(text[index - 1]);
-            if (leftBoundary)
-            {
-                int pos = index + valueLength;
-                while (pos < text.Length && char.IsWhiteSpace(text[pos]))
-                    pos++;
-
-                if (pos < text.Length && text[pos] == '(')
-                    return true;
-            }
-
-            index += valueLength;
-        }
-
-        return false;
-    }
-
-    private static bool TryMatchQualifiedOrUnqualifiedName(string text, int pos, string schema, string name)
-    {
-        int nameLength = name.Length;
-        if (pos + nameLength > text.Length)
-            return false;
-
-        if (!string.IsNullOrEmpty(schema))
-        {
-            int schemaLength = schema.Length;
-            if (pos + schemaLength + 1 + nameLength <= text.Length &&
-                text[pos + schemaLength] == '.' &&
-                text.AsSpan(pos, schemaLength).Equals(schema, StringComparison.OrdinalIgnoreCase) &&
-                text.AsSpan(pos + schemaLength + 1, nameLength).Equals(name, StringComparison.OrdinalIgnoreCase))
-            {
-                int after = pos + schemaLength + 1 + nameLength;
-                if (after == text.Length || !IsWordChar(text[after]))
-                    return true;
-            }
-        }
-
-        if (text.AsSpan(pos, nameLength).Equals(name, StringComparison.OrdinalIgnoreCase))
-        {
-            int after = pos + nameLength;
-            if (after == text.Length || !IsWordChar(text[after]))
-                return true;
-        }
-
-        return false;
-    }
-
-    private static bool IsWordChar(char c) =>
-        (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
-
     private static string Safe(string value)
     {
         return SqlIdentifier.SafeFileName(value);
     }
+
+    private sealed class FileIndex
+    {
+        public Dictionary<string, List<string>> Qualified { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, List<(string Schema, string File)>> ByName { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public static FileIndex Empty { get; } = new FileIndex();
+
+        public void Add(string schema, string name, string file)
+        {
+            Add(Qualified, $"{schema}.{name}", file);
+            Add(ByName, name, (schema, file));
+        }
+
+        public static FileIndex Build(IReadOnlyDictionary<string, string> files)
+        {
+            var index = new FileIndex();
+            foreach (var (key, file) in files)
+            {
+                var dot = key.LastIndexOf('.');
+                var schema = dot >= 0 ? key[..dot] : "public";
+                var name = dot >= 0 ? key[(dot + 1)..] : key;
+                index.Add(schema, name, file);
+            }
+            return index;
+        }
+
+        public static FileIndex BuildFunctions(IReadOnlyList<string> functionFiles)
+        {
+            var index = new FileIndex();
+            const string prefix = "functions/";
+            foreach (var file in functionFiles)
+            {
+                if (!file.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var relative = file[prefix.Length..];
+                var withoutExt = Path.GetFileNameWithoutExtension(relative);
+                var parts = withoutExt.Split('.', 3);
+                if (parts.Length >= 2)
+                    index.Add(parts[0], parts[1], file);
+            }
+            return index;
+        }
+
+        public static FileIndex BuildConstraints(IReadOnlyList<string> constraintFiles)
+        {
+            var index = new FileIndex();
+            const string prefix = "constraints/";
+            foreach (var file in constraintFiles)
+            {
+                if (!file.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var relative = file[prefix.Length..];
+                var withoutExt = Path.GetFileNameWithoutExtension(relative);
+                var parts = withoutExt.Split('.', 3);
+                if (parts.Length >= 2)
+                    index.Add(parts[0], parts[1], file);
+            }
+            return index;
+        }
+
+        private static void Add(Dictionary<string, List<string>> dict, string key, string file)
+        {
+            if (!dict.TryGetValue(key, out var list))
+            {
+                list = new List<string>();
+                dict[key] = list;
+            }
+            list.Add(file);
+        }
+
+        private static void Add(Dictionary<string, List<(string Schema, string File)>> dict, string key, (string Schema, string File) entry)
+        {
+            if (!dict.TryGetValue(key, out var list))
+            {
+                list = new List<(string Schema, string File)>();
+                dict[key] = list;
+            }
+            list.Add(entry);
+        }
+    }
+
+    private static void ScanForReferences(
+        string text,
+        Dictionary<string, HashSet<string>> dependencies,
+        string fromFile,
+        FileIndex typeIndex,
+        FileIndex tableIndex,
+        FileIndex viewIndex,
+        FileIndex functionIndex,
+        bool functionRequiresCall)
+    {
+        var i = 0;
+        while (i < text.Length)
+        {
+            if (!IsIdentifierStart(text[i]))
+            {
+                i++;
+                continue;
+            }
+
+            var token = SqlTokenizer.ReadIdentifier(text, i, out var after, unquote: true);
+            if (token is null)
+            {
+                i++;
+                continue;
+            }
+
+            i = after;
+
+            var j = i;
+            while (j < text.Length && char.IsWhiteSpace(text[j]))
+                j++;
+            var isCall = j < text.Length && text[j] == '(';
+
+            AddMatches(dependencies, fromFile, typeIndex, token);
+            AddMatches(dependencies, fromFile, tableIndex, token);
+            AddMatches(dependencies, fromFile, viewIndex, token);
+
+            if (!functionRequiresCall || isCall)
+                AddMatches(dependencies, fromFile, functionIndex, token);
+        }
+    }
+
+    private static void AddMatches(Dictionary<string, HashSet<string>> dependencies, string? fromFile, FileIndex index, string token)
+    {
+        if (string.IsNullOrEmpty(fromFile))
+            return;
+
+        if (index.Qualified.TryGetValue(token, out var qualifiedFiles))
+        {
+            foreach (var file in qualifiedFiles)
+                AddDependency(dependencies, fromFile, file);
+        }
+
+        var dot = token.LastIndexOf('.');
+        var name = dot >= 0 ? token[(dot + 1)..] : token;
+        if (index.ByName.TryGetValue(name, out var nameEntries))
+        {
+            foreach (var (_, file) in nameEntries)
+                AddDependency(dependencies, fromFile, file);
+        }
+    }
+
+    private static IEnumerable<string> FindReferencedTableFiles(string definition, FileIndex tableIndex, FileIndex constraintIndex)
+    {
+        var i = 0;
+        while (i < definition.Length)
+        {
+            if (!IsIdentifierStart(definition[i]))
+            {
+                i++;
+                continue;
+            }
+
+            var token = SqlTokenizer.ReadIdentifier(definition, i, out var after, unquote: true);
+            if (token is null)
+            {
+                i++;
+                continue;
+            }
+
+            i = after;
+
+            if (!token.Equals("REFERENCES", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var remaining = definition[i..].TrimStart();
+            var tableToken = SqlTokenizer.ReadIdentifier(remaining, 0, out _, unquote: true);
+            if (tableToken is null)
+                continue;
+
+            if (tableToken.Contains('.'))
+            {
+                if (tableIndex.Qualified.TryGetValue(tableToken, out var tableFiles))
+                {
+                    foreach (var tableFile in tableFiles)
+                    {
+                        var file = TryGetConstraintOrTableFile(tableToken, tableFile, constraintIndex);
+                        if (file is not null)
+                            yield return file;
+                    }
+                }
+            }
+            else
+            {
+                if (tableIndex.ByName.TryGetValue(tableToken, out var entries))
+                {
+                    foreach (var (schema, tableFile) in entries)
+                    {
+                        var key = $"{schema}.{tableToken}";
+                        var file = TryGetConstraintOrTableFile(key, tableFile, constraintIndex);
+                        if (file is not null)
+                            yield return file;
+                    }
+                }
+            }
+        }
+    }
+
+    private static string? TryGetConstraintOrTableFile(string qualifiedKey, string tableFile, FileIndex constraintIndex)
+    {
+        if (constraintIndex.Qualified.TryGetValue(qualifiedKey, out var list) && list.Count > 0)
+            return list[0];
+        return tableFile;
+    }
+
+    private static bool IsIdentifierStart(char c)
+        => char.IsLetter(c) || c == '_' || c == '$' || c == '"';
 }

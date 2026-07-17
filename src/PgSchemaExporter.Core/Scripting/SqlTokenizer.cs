@@ -518,4 +518,397 @@ public static class SqlTokenizer
 
         return true;
     }
+
+    public static bool IsWordChar(char c)
+        => char.IsLetterOrDigit(c) || c == '_';
+
+    public static int IndexOfWord(string text, string word, int start = 0)
+        => IndexOfWord(text, word, start, out _);
+
+    public static int IndexOfWord(string text, string word, int start, out int matchedLength)
+    {
+        matchedLength = 0;
+        if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(word) || start < 0 || start > text.Length)
+            return -1;
+
+        var words = word.Split([' '], StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length == 0)
+            return -1;
+
+        var first = words[0];
+        var i = start;
+
+        while (i <= text.Length - first.Length)
+        {
+            var found = text.IndexOf(first, i, StringComparison.OrdinalIgnoreCase);
+            if (found < 0)
+                return -1;
+
+            if (!IsWordBoundaryBefore(text, found))
+            {
+                i = found + 1;
+                continue;
+            }
+
+            var pos = found + first.Length;
+            var matched = true;
+
+            for (var k = 1; k < words.Length; k++)
+            {
+                var sawWhitespace = false;
+                while (pos < text.Length && char.IsWhiteSpace(text[pos]))
+                {
+                    sawWhitespace = true;
+                    pos++;
+                }
+
+                if (!sawWhitespace)
+                {
+                    matched = false;
+                    break;
+                }
+
+                var w = words[k];
+                if (pos + w.Length > text.Length || !text.AsSpan(pos, w.Length).Equals(w, StringComparison.OrdinalIgnoreCase))
+                {
+                    matched = false;
+                    break;
+                }
+
+                pos += w.Length;
+            }
+
+            if (matched)
+            {
+                if (pos >= text.Length || !IsWordChar(text[pos]))
+                {
+                    matchedLength = pos - found;
+                    return found;
+                }
+            }
+
+            i = found + 1;
+        }
+
+        return -1;
+    }
+
+    public static int IndexAfterWord(string text, string word, int start = 0)
+    {
+        var index = IndexOfWord(text, word, start, out var length);
+        return index < 0 ? -1 : index + length;
+    }
+
+    public static int LastIndexOfWord(string text, string word, int start = -1)
+    {
+        if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(word))
+            return -1;
+
+        var words = word.Split([' '], StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length == 0)
+            return -1;
+
+        var first = words[0];
+        var searchEnd = text.Length - first.Length;
+        var i = start >= 0 && start <= searchEnd ? start : searchEnd;
+
+        while (i >= 0)
+        {
+            var found = text.LastIndexOf(first, i, StringComparison.OrdinalIgnoreCase);
+            if (found < 0)
+                return -1;
+
+            if (MatchesWordAt(text, found, word))
+                return found;
+
+            i = found - 1;
+        }
+
+        return -1;
+    }
+
+    public static bool ContainsWord(string text, string word)
+        => IndexOfWord(text, word) >= 0;
+
+    public static bool StartsWithWord(string text, string word)
+    {
+        if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(word))
+            return false;
+        return IndexOfWord(text, word, 0) == 0;
+    }
+
+    public static bool MatchesWordAt(string text, int index, string word)
+    {
+        if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(word) || index < 0 || index >= text.Length)
+            return false;
+
+        var words = word.Split([' '], StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length == 0)
+            return false;
+
+        if (index + words[0].Length > text.Length)
+            return false;
+
+        if (!IsWordBoundaryBefore(text, index))
+            return false;
+
+        var pos = index;
+        for (var k = 0; k < words.Length; k++)
+        {
+            if (k > 0)
+            {
+                var sawWhitespace = false;
+                while (pos < text.Length && char.IsWhiteSpace(text[pos]))
+                {
+                    sawWhitespace = true;
+                    pos++;
+                }
+
+                if (!sawWhitespace)
+                    return false;
+            }
+
+            var w = words[k];
+            if (pos + w.Length > text.Length || !text.AsSpan(pos, w.Length).Equals(w, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            pos += w.Length;
+        }
+
+        if (pos < text.Length && IsWordChar(text[pos]))
+            return false;
+
+        return true;
+    }
+
+    public static string SkipLeadingNoise(string text)
+    {
+        text = text.TrimStart();
+
+        while (true)
+        {
+            if (StartsWithWord(text, "IF NOT EXISTS"))
+                text = text["IF NOT EXISTS".Length..].TrimStart();
+            else if (StartsWithWord(text, "ONLY"))
+                text = text["ONLY".Length..].TrimStart();
+            else
+                break;
+        }
+
+        return text;
+    }
+
+    public static string? ReadIdentifier(string text)
+        => ReadIdentifier(text, 0, out _);
+
+    public static string? ReadIdentifier(string text, int start, out int after)
+        => ReadIdentifier(text, start, out after, unquote: false);
+
+    public static string? ReadIdentifier(string text, int start, out int after, bool unquote)
+    {
+        after = start;
+        if (string.IsNullOrEmpty(text))
+            return null;
+
+        var i = start;
+        while (i < text.Length && char.IsWhiteSpace(text[i]))
+            i++;
+
+        if (i >= text.Length)
+            return null;
+
+        var tokenStart = i;
+
+        // Fast path: simple unquoted identifier with no schema qualifier.
+        if (text[i] != '"')
+        {
+            if (char.IsLetterOrDigit(text[i]) || text[i] == '_' || text[i] == '$')
+            {
+                while (i < text.Length && (char.IsLetterOrDigit(text[i]) || text[i] == '_' || text[i] == '$'))
+                    i++;
+
+                if (i == text.Length || text[i] != '.')
+                {
+                    after = i;
+                    var raw = text.Substring(tokenStart, i - tokenStart);
+                    return unquote ? UnquoteQualified(raw) : raw;
+                }
+            }
+
+            i = tokenStart;
+        }
+        else
+        {
+            // Fast path: simple quoted identifier without escapes or schema qualifier.
+            i++;
+            var contentStart = i;
+            var hasEscape = false;
+            while (i < text.Length)
+            {
+                if (text[i] == '"')
+                {
+                    if (i + 1 < text.Length && text[i + 1] == '"')
+                    {
+                        hasEscape = true;
+                        i += 2;
+                        continue;
+                    }
+                    break;
+                }
+                i++;
+            }
+
+            if (i < text.Length && text[i] == '"')
+            {
+                var closing = i;
+                if (closing + 1 >= text.Length || text[closing + 1] != '.')
+                {
+                    after = closing + 1;
+                    if (!unquote)
+                        return text.Substring(tokenStart, closing - tokenStart + 1);
+
+                    if (!hasEscape)
+                        return text.Substring(contentStart, closing - contentStart);
+
+                    var escaped = new StringBuilder(closing - contentStart);
+                    for (var k = contentStart; k < closing; k++)
+                    {
+                        escaped.Append(text[k]);
+                        if (text[k] == '"' && k + 1 < closing && text[k + 1] == '"')
+                            k++;
+                    }
+                    return escaped.ToString();
+                }
+            }
+
+            i = tokenStart;
+        }
+
+        var sb = new StringBuilder();
+        while (i < text.Length)
+        {
+            var c = text[i];
+
+            if (c == '"')
+            {
+                // Capture the quoted identifier, including surrounding quotes and escaped "".
+                sb.Append(c);
+                i++;
+
+                while (i < text.Length)
+                {
+                    c = text[i];
+                    sb.Append(c);
+
+                    if (c == '"')
+                    {
+                        if (i + 1 < text.Length && text[i + 1] == '"')
+                        {
+                            sb.Append('"');
+                            i += 2;
+                            continue;
+                        }
+
+                        i++;
+                        break;
+                    }
+
+                    i++;
+                }
+
+                // Continue if the quoted identifier is schema-qualified.
+                if (i < text.Length && text[i] == '.')
+                {
+                    sb.Append('.');
+                    i++;
+                    continue;
+                }
+
+                after = i;
+                if (!unquote)
+                    return sb.ToString();
+
+                return UnquoteQualified(sb.ToString());
+            }
+
+            if (char.IsLetterOrDigit(c) || c == '_' || c == '$' || c == '.')
+            {
+                sb.Append(c);
+                i++;
+                continue;
+            }
+
+            break;
+        }
+
+        after = i;
+        return sb.Length > 0 ? sb.ToString() : null;
+    }
+
+    private static string UnquoteQualified(string raw)
+    {
+        if (string.IsNullOrEmpty(raw))
+            return raw;
+
+        if (raw.IndexOf('.') < 0)
+        {
+            if (raw.Length >= 2 && raw[0] == '"' && raw[raw.Length - 1] == '"')
+            {
+                if (raw.Length == 2)
+                    return string.Empty;
+
+                var hasEscapedQuote = false;
+                for (var i = 1; i < raw.Length - 1; i++)
+                {
+                    if (raw[i] == '"' && raw[i + 1] == '"')
+                    {
+                        hasEscapedQuote = true;
+                        i++;
+                    }
+                }
+
+                if (!hasEscapedQuote)
+                    return raw.Substring(1, raw.Length - 2);
+
+                var sb = new StringBuilder(raw.Length - 2);
+                for (var i = 1; i < raw.Length - 1; i++)
+                {
+                    sb.Append(raw[i]);
+                    if (raw[i] == '"' && i + 1 < raw.Length - 1 && raw[i + 1] == '"')
+                        i++;
+                }
+
+                return sb.ToString();
+            }
+
+            return raw;
+        }
+
+        var parts = SplitTopLevel(raw, '.');
+        var result = new StringBuilder(raw.Length);
+        var first = true;
+
+        foreach (var part in parts)
+        {
+            if (!first)
+                result.Append('.');
+
+            first = false;
+            var p = part.Trim();
+            if (p.Length >= 2 && p[0] == '"' && p[^1] == '"')
+                result.Append(p[1..^1].Replace("\"\"", "\""));
+            else
+                result.Append(p);
+        }
+
+        return result.ToString();
+    }
+
+    private static bool IsWordBoundaryBefore(string text, int index)
+    {
+        if (index == 0)
+            return true;
+
+        return !IsWordChar(text[index - 1]);
+    }
 }

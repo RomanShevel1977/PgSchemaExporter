@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+using PgSchemaExporter.Core.Scripting;
 
 namespace PgSchemaExporter.Core.Migration;
 
@@ -8,16 +8,8 @@ namespace PgSchemaExporter.Core.Migration;
 /// Concurrent statements cannot run inside a transaction block, so the rewritten
 /// statements are flagged with <see cref="MigrationStatement.RunsOutsideTransaction"/>.
 /// </summary>
-public static partial class OnlineDdlRewriter
+public static class OnlineDdlRewriter
 {
-    [GeneratedRegex(@"^\s*CREATE\s+(UNIQUE\s+)?INDEX\s+(CONCURRENTLY\s+)?",
-        RegexOptions.IgnoreCase | RegexOptions.Singleline)]
-    private static partial Regex CreateIndexRegex();
-
-    [GeneratedRegex(@"^\s*DROP\s+INDEX\s+(CONCURRENTLY\s+)?",
-        RegexOptions.IgnoreCase | RegexOptions.Singleline)]
-    private static partial Regex DropIndexRegex();
-
     /// <summary>
     /// Returns a new list where index create/drop statements are converted to
     /// their concurrent forms. Non-index statements are returned unchanged.
@@ -39,18 +31,9 @@ public static partial class OnlineDdlRewriter
 
         var sql = statement.Sql;
 
-        var createMatch = CreateIndexRegex().Match(sql);
-        if (createMatch.Success && !createMatch.Groups[2].Success)
+        if (TryFindIndexPrefix(sql, out var prefixEnd))
         {
-            // Rewrite only the matched prefix, leaving the rest of the statement intact.
-            var rewritten = sql[..createMatch.Length].TrimEnd() + " CONCURRENTLY " + sql[createMatch.Length..];
-            return Concurrent(statement, rewritten);
-        }
-
-        var dropMatch = DropIndexRegex().Match(sql);
-        if (dropMatch.Success && !dropMatch.Groups[1].Success)
-        {
-            var rewritten = sql[..dropMatch.Length].TrimEnd() + " CONCURRENTLY " + sql[dropMatch.Length..];
+            var rewritten = sql[..prefixEnd].TrimEnd() + " CONCURRENTLY " + sql[prefixEnd..];
             return Concurrent(statement, rewritten);
         }
 
@@ -59,6 +42,71 @@ public static partial class OnlineDdlRewriter
             return Concurrent(statement, sql);
 
         return statement;
+    }
+
+    private static bool TryFindIndexPrefix(string sql, out int prefixEnd)
+    {
+        prefixEnd = 0;
+
+        var i = SkipWhitespace(sql, 0);
+
+        if (!TryMatchKeyword(sql, ref i, "CREATE"))
+        {
+            // DROP INDEX case.
+            i = SkipWhitespace(sql, 0);
+            if (!TryMatchKeyword(sql, ref i, "DROP"))
+                return false;
+
+            if (!TryMatchKeyword(sql, ref i, "INDEX"))
+                return false;
+
+            prefixEnd = SkipWhitespace(sql, i);
+            if (PeekKeyword(sql, prefixEnd) == "CONCURRENTLY")
+                return false;
+
+            return true;
+        }
+
+        // CREATE [UNIQUE] INDEX case.
+        var hasUnique = TryMatchKeyword(sql, ref i, "UNIQUE");
+        _ = hasUnique;
+
+        if (!TryMatchKeyword(sql, ref i, "INDEX"))
+            return false;
+
+        prefixEnd = SkipWhitespace(sql, i);
+        if (PeekKeyword(sql, prefixEnd) == "CONCURRENTLY")
+            return false;
+
+        return true;
+    }
+
+    private static bool TryMatchKeyword(string sql, ref int i, string keyword)
+    {
+        i = SkipWhitespace(sql, i);
+        var token = SqlTokenizer.ReadIdentifier(sql, i, out var after, unquote: false);
+        if (token is null || !token.Equals(keyword, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        i = after;
+        return true;
+    }
+
+    private static string? PeekKeyword(string sql, int i)
+    {
+        i = SkipWhitespace(sql, i);
+        if (i >= sql.Length)
+            return null;
+
+        var token = SqlTokenizer.ReadIdentifier(sql, i, out _, unquote: false);
+        return token;
+    }
+
+    private static int SkipWhitespace(string sql, int i)
+    {
+        while (i < sql.Length && char.IsWhiteSpace(sql[i]))
+            i++;
+        return i;
     }
 
     private static MigrationStatement Concurrent(MigrationStatement original, string sql)

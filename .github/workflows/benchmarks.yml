@@ -1,16 +1,23 @@
 name: Benchmarks
 
 on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'src/**/*.cs'
+      - 'tests/PgSchemaExporter.Benchmarks/**'
+  pull_request:
+    paths:
+      - 'src/**/*.cs'
+      - 'tests/PgSchemaExporter.Benchmarks/**'
   workflow_dispatch:
     inputs:
       filter:
         description: 'BenchmarkDotNet filter expression (default: *)'
         required: false
         default: '*'
-  pull_request:
-    paths:
-      - 'src/**/*.cs'
-      - 'tests/PgSchemaExporter.Benchmarks/**'
 
 jobs:
   benchmark:
@@ -31,6 +38,24 @@ jobs:
       - name: Run benchmarks
         run: |
           dotnet run -c Release --project tests/PgSchemaExporter.Benchmarks/PgSchemaExporter.Benchmarks.csproj -- --filter '${{ github.event.inputs.filter || '*' }}'
+
+      - name: Checkout baseline
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.base_ref }}
+          path: baseline
+
+      - name: Run baseline benchmarks
+        if: github.event_name == 'pull_request'
+        run: |
+          dotnet run -c Release --project baseline/tests/PgSchemaExporter.Benchmarks/PgSchemaExporter.Benchmarks.csproj -- --filter '${{ github.event.inputs.filter || '*' }}'
+
+      - name: Compare benchmark results
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        run: |
+          ./scripts/Compare-Benchmarks.ps1 -BaselineDir "baseline/BenchmarkDotNet.Artifacts/results" -CurrentDir "BenchmarkDotNet.Artifacts/results" -OutputPath "benchmark-comparison.md"
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4

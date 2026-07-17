@@ -70,9 +70,18 @@ public static class MigrationPlanRenderer
 
     private static string FirstLine(string sql)
     {
-        var normalized = sql.Replace("\r\n", "\n").Replace('\r', '\n').Trim();
-        var newline = normalized.IndexOf('\n');
-        var line = newline < 0 ? normalized : normalized[..newline] + " …";
-        return line.Length <= 160 ? line : line[..160] + "…";
+        var span = sql.AsSpan().Trim();
+
+        for (var i = 0; i < span.Length; i++)
+        {
+            if (span[i] == '\r' || span[i] == '\n')
+            {
+                var line = span[..i].TrimEnd();
+                var withEllipsis = line.ToString() + " …";
+                return withEllipsis.Length <= 160 ? withEllipsis : withEllipsis[..160] + "…";
+            }
+        }
+
+        return span.Length <= 160 ? span.ToString() : span[..160].ToString() + "…";
     }
 }

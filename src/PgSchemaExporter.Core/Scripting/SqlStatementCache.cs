@@ -11,8 +11,11 @@ public sealed class SqlStatementCache
     private readonly Dictionary<string, IReadOnlyList<string>> _splitCache = new();
     private readonly Dictionary<string, string> _normalizeCache = new();
 
-    public IReadOnlyList<string> SplitStatements(string sql)
+    public IReadOnlyList<string> SplitStatements(string sql, bool cache = true)
     {
+        if (!cache)
+            return SqlTokenizer.SplitStatements(sql);
+
         if (!_splitCache.TryGetValue(sql, out var cached))
             _splitCache[sql] = cached = SqlTokenizer.SplitStatements(sql);
 

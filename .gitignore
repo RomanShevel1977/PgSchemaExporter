@@ -18,4 +18,5 @@ publish/
 !scripts/run-unit-tests.sh
 !scripts/profile-benchmarks.ps1
 !scripts/profile-benchmarks.sh
+!scripts/Compare-Benchmarks.ps1
 

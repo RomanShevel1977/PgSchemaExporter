@@ -1,20 +1,12 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace PgSchemaExporter.Core.Migration.Plan;
 
 /// <summary>Reads and writes <see cref="MigrationPlan"/> JSON files.</summary>
 public static class MigrationPlanFile
 {
-    private static readonly JsonSerializerOptions SerializerOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-    };
-
     public static string Serialize(MigrationPlan plan)
-        => JsonSerializer.Serialize(plan, SerializerOptions);
+        => JsonSerializer.Serialize(plan, Serialization.PgSchemaExporterJsonContext.Default.MigrationPlan);
 
     public static async Task WriteAsync(string path, MigrationPlan plan, CancellationToken cancellationToken = default)
     {
@@ -31,7 +23,7 @@ public static class MigrationPlanFile
             throw new FileNotFoundException($"Plan file was not found: {path}", path);
 
         var json = await File.ReadAllTextAsync(path, cancellationToken);
-        return JsonSerializer.Deserialize<MigrationPlan>(json, SerializerOptions)
+        return JsonSerializer.Deserialize(json, Serialization.PgSchemaExporterJsonContext.Default.MigrationPlan)
             ?? throw new InvalidOperationException($"Plan file is empty or invalid: {path}");
     }
 }

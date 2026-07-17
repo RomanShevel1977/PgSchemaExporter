@@ -252,21 +252,27 @@ public sealed class SchemaFileWriter
 
     private static string TableKey(string schema, string table) => $"{schema}\u0000{table}";
 
+    private static readonly char[] HexDigits = "0123456789abcdef".ToCharArray();
+
     // Deterministic hash so the same function always maps to the same file name across runs,
     // keeping git diffs clean (string.GetHashCode is randomized per process).
     private static string StableHash(string value)
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
-        var sb = new StringBuilder(16);
+        var chars = new char[16];
         for (var i = 0; i < 8; i++)
-            sb.Append(bytes[i].ToString("x2"));
-        return sb.ToString();
+        {
+            chars[i * 2] = HexDigits[bytes[i] >> 4];
+            chars[i * 2 + 1] = HexDigits[bytes[i] & 0x0F];
+        }
+
+        return new string(chars);
     }
 
     private static string ApplyFormat(string sql, FormatOptions format)
     {
         if (!format.UseIfNotExists)
-            sql = sql.Replace(" IF NOT EXISTS ", " ", StringComparison.OrdinalIgnoreCase);
+            sql = sql.Replace(" IF NOT EXISTS ", " ");
 
         return sql;
     }

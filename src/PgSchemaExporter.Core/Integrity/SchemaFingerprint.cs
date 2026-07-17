@@ -34,23 +34,27 @@ public static class SchemaFingerprint
             .ToList();
 
         using var aggregate = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        var fileHashes = new List<SchemaFileHash>(files.Count);
+        var fileHashes = new SchemaFileHash[files.Count];
 
-        foreach (var file in files)
+        Parallel.For(0, files.Count, i =>
         {
+            var file = files[i];
             var content = File.ReadAllText(file.Full)
                 .Replace("\r\n", "\n")
                 .Replace('\r', '\n');
 
             var contentHash = ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
 
-            fileHashes.Add(new SchemaFileHash
+            fileHashes[i] = new SchemaFileHash
             {
                 Path = file.Relative,
                 Hash = contentHash
-            });
+            };
+        });
 
-            var entry = Encoding.UTF8.GetBytes($"{file.Relative}\n{contentHash}\n");
+        foreach (var fileHash in fileHashes)
+        {
+            var entry = Encoding.UTF8.GetBytes($"{fileHash.Path}\n{fileHash.Hash}\n");
             aggregate.AppendData(entry);
         }
 
@@ -59,7 +63,7 @@ public static class SchemaFingerprint
         return new SchemaFingerprintResult
         {
             Fingerprint = overall,
-            FileCount = fileHashes.Count,
+            FileCount = fileHashes.Length,
             Files = fileHashes
         };
     }

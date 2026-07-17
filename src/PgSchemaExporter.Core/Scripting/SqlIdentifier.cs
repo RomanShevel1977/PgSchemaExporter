@@ -8,7 +8,17 @@ public static class SqlIdentifier
 
     public static string Quote(string identifier)
     {
-        return "\"" + identifier.Replace("\"", "\"\"") + "\"";
+        var sb = new StringBuilder(identifier.Length + 2);
+        sb.Append('"');
+        foreach (var c in identifier)
+        {
+            if (c == '"')
+                sb.Append("\"\"");
+            else
+                sb.Append(c);
+        }
+        sb.Append('"');
+        return sb.ToString();
     }
 
     public static string Qualified(string schema, string name)

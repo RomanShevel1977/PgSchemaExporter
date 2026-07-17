@@ -309,18 +309,21 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
     private static async Task<IReadOnlyList<DbSequence>> GetSequencesAsync(NpgsqlConnection connection, ExportOptions options, CancellationToken cancellationToken)
     {
         const string sql = @"
-            SELECT sequence_schema,
-                   sequence_name,
-                   data_type,
-                   start_value::bigint,
-                   minimum_value::bigint,
-                   maximum_value::bigint,
-                   increment::bigint,
-                   cycle_option = 'YES' AS cycle
-            FROM information_schema.sequences
-            WHERE sequence_schema = ANY(@schemas)
-              AND NOT sequence_schema = ANY(@excludeSchemas)
-            ORDER BY sequence_schema, sequence_name;";
+            SELECT n.nspname AS sequence_schema,
+                   c.relname AS sequence_name,
+                   format_type(s.seqtypid, NULL) AS data_type,
+                   s.seqstart AS start_value,
+                   s.seqmin AS minimum_value,
+                   s.seqmax AS maximum_value,
+                   s.seqincrement AS increment,
+                   s.seqcycle AS cycle
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            JOIN pg_sequence s ON s.seqrelid = c.oid
+            WHERE c.relkind = 'S'
+              AND n.nspname = ANY(@schemas)
+              AND NOT n.nspname = ANY(@excludeSchemas)
+            ORDER BY n.nspname, c.relname;";
 
         await using var command = new NpgsqlCommand(sql, connection);
         AddSchemaParameters(command, options);
@@ -772,31 +775,36 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
                             AND n.nspname = ANY(@schemas)
                             AND NOT n.nspname = ANY(@excludeSchemas);";
 
-        await using var command = new NpgsqlCommand(sql, connection);
-        AddSchemaParameters(command, options);
-
         var result = new List<DbComment>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+
+        foreach (var query in sql.Split(["\n            UNION ALL\n"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            result.Add(new DbComment
+            if (string.IsNullOrWhiteSpace(query))
+                continue;
+
+            await using var command = new NpgsqlCommand(query, connection);
+            AddSchemaParameters(command, options);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
             {
-                Schema = reader.GetString(0),
-                ObjectType = reader.GetString(1),
-                ObjectName = reader.GetString(2),
-                SubObject = reader.IsDBNull(3) ? null : reader.GetString(3),
-                Definition = reader.GetString(4)
-            });
+                result.Add(new DbComment
+                {
+                    Schema = reader.GetString(0),
+                    ObjectType = reader.GetString(1),
+                    ObjectName = reader.GetString(2),
+                    SubObject = reader.IsDBNull(3) ? null : reader.GetString(3),
+                    Definition = reader.GetString(4)
+                });
+            }
         }
 
-        var ordered = result
+        return result
             .OrderBy(x => x.Schema, StringComparer.OrdinalIgnoreCase)
             .ThenBy(x => x.ObjectType, StringComparer.OrdinalIgnoreCase)
             .ThenBy(x => x.ObjectName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(x => x.SubObject ?? string.Empty, StringComparer.OrdinalIgnoreCase)
             .ToList();
-
-        return ordered;
     }
 
     private static async Task<IReadOnlyList<DbGrant>> GetGrantsAsync(NpgsqlConnection connection, ExportOptions options, CancellationToken cancellationToken)
@@ -883,31 +891,36 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
               AND NOT n.nspname = ANY(@excludeSchemas)
                             AND p.prokind IN ('f', 'p');";
 
-        await using var command = new NpgsqlCommand(sql, connection);
-        AddSchemaParameters(command, options);
-
         var result = new List<DbGrant>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+
+        foreach (var query in sql.Split(["\n            UNION ALL\n"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            result.Add(new DbGrant
+            if (string.IsNullOrWhiteSpace(query))
+                continue;
+
+            await using var command = new NpgsqlCommand(query, connection);
+            AddSchemaParameters(command, options);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
             {
-                Schema = reader.GetString(0),
-                ObjectType = reader.GetString(1),
-                ObjectName = reader.GetString(2),
-                SubObject = reader.IsDBNull(3) ? null : reader.GetString(3),
-                Definition = reader.GetString(4)
-            });
+                result.Add(new DbGrant
+                {
+                    Schema = reader.GetString(0),
+                    ObjectType = reader.GetString(1),
+                    ObjectName = reader.GetString(2),
+                    SubObject = reader.IsDBNull(3) ? null : reader.GetString(3),
+                    Definition = reader.GetString(4)
+                });
+            }
         }
 
-        var ordered = result
+        return result
             .OrderBy(x => x.Schema, StringComparer.OrdinalIgnoreCase)
             .ThenBy(x => x.ObjectType, StringComparer.OrdinalIgnoreCase)
             .ThenBy(x => x.ObjectName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(x => x.SubObject ?? string.Empty, StringComparer.OrdinalIgnoreCase)
             .ToList();
-
-        return ordered;
     }
 
     private static async Task<IReadOnlyList<DbPolicy>> GetPoliciesAsync(NpgsqlConnection connection, ExportOptions options, CancellationToken cancellationToken)

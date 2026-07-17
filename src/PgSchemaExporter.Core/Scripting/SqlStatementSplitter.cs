@@ -6,8 +6,8 @@ public sealed class SqlStatementSplitter
 {
     private readonly SqlStatementCache _cache = new();
 
-    public IReadOnlyList<string> Split(string sql)
+    public IReadOnlyList<string> Split(string sql, bool cache = true)
     {
-        return _cache.SplitStatements(sql);
+        return _cache.SplitStatements(sql, cache);
     }
 }

@@ -1,4 +1,3 @@
-using System.Text;
 using PgSchemaExporter.Core.Scripting;
 
 namespace PgSchemaExporter.Core.Migration;
@@ -59,7 +58,7 @@ public static class SqlDropBuilder
 
     private static string? BuildViewDrop(string sql)
     {
-        if (ContainsWord(sql, "MATERIALIZED"))
+        if (SqlTokenizer.ContainsWord(sql, "MATERIALIZED"))
             return Wrap("DROP MATERIALIZED VIEW IF EXISTS", NameAfter(sql, "VIEW"), " CASCADE");
 
         return Wrap("DROP VIEW IF EXISTS", NameAfter(sql, "VIEW"), " CASCADE");
@@ -119,7 +118,7 @@ public static class SqlDropBuilder
     private static string? BuildFunctionDrop(string sql)
     {
         // CREATE [OR REPLACE] FUNCTION <schema>.<name>(<args>) RETURNS ...
-        var start = IndexAfterWord(sql, "FUNCTION");
+        var start = SqlTokenizer.IndexAfterWord(sql, "FUNCTION");
         if (start < 0)
             return null;
 
@@ -141,7 +140,7 @@ public static class SqlDropBuilder
     private static string? BuildCommentReset(string sql)
     {
         // COMMENT ON <type> <name> IS '...'  ->  COMMENT ON <type> <name> IS NULL;
-        var isIndex = LastIndexOfWord(sql, "IS");
+        var isIndex = SqlTokenizer.LastIndexOfWord(sql, "IS");
         if (isIndex < 0)
             return null;
 
@@ -151,17 +150,19 @@ public static class SqlDropBuilder
     private static string? BuildGrantRevoke(string sql)
     {
         var trimmed = sql.TrimEnd(';').Trim();
-        if (!StartsWithWord(trimmed, "GRANT"))
+        if (!SqlTokenizer.StartsWithWord(trimmed, "GRANT"))
             return null;
 
         // GRANT <privs> ON <obj> TO <roles> [WITH GRANT OPTION]
-        var toIndex = LastIndexOfWord(trimmed, "TO");
+        var toIndex = SqlTokenizer.LastIndexOfWord(trimmed, "TO");
         if (toIndex < 0)
             return null;
 
         var head = trimmed["GRANT".Length..toIndex];
         var roles = trimmed[(toIndex + "TO".Length)..].Trim();
-        roles = StripWord(roles, "WITH GRANT OPTION");
+        var grantOptionIndex = SqlTokenizer.IndexOfWord(roles, "WITH GRANT OPTION");
+        if (grantOptionIndex >= 0)
+            roles = roles[..grantOptionIndex].Trim();
 
         return $"REVOKE{head}FROM {roles};";
     }
@@ -172,93 +173,16 @@ public static class SqlDropBuilder
     /// </summary>
     private static string? NameAfter(string sql, string keyword)
     {
-        var index = IndexAfterWord(sql, keyword);
+        var index = SqlTokenizer.IndexAfterWord(sql, keyword);
         if (index < 0)
             return null;
 
         var span = sql[index..];
-        span = SkipLeadingNoise(span);
+        span = SqlTokenizer.SkipLeadingNoise(span);
 
-        return ReadIdentifier(span);
+        return SqlTokenizer.ReadIdentifier(span);
     }
 
-    private static string SkipLeadingNoise(string text)
-    {
-        text = text.TrimStart();
-
-        while (true)
-        {
-            if (StartsWithWord(text, "IF NOT EXISTS"))
-                text = text["IF NOT EXISTS".Length..].TrimStart();
-            else if (StartsWithWord(text, "ONLY"))
-                text = text["ONLY".Length..].TrimStart();
-            else
-                break;
-        }
-
-        return text;
-    }
-
-    private static string? ReadIdentifier(string text)
-    {
-        text = text.TrimStart();
-        if (text.Length == 0)
-            return null;
-
-        var sb = new StringBuilder();
-        var i = 0;
-
-        while (i < text.Length)
-        {
-            var c = text[i];
-
-            if (c == '"')
-            {
-                sb.Append('"');
-                i++;
-                while (i < text.Length)
-                {
-                    sb.Append(text[i]);
-                    if (text[i] == '"')
-                    {
-                        if (i + 1 < text.Length && text[i + 1] == '"')
-                        {
-                            sb.Append('"');
-                            i += 2;
-                            continue;
-                        }
-
-                        i++;
-                        break;
-                    }
-
-                    i++;
-                }
-
-                // Continue to capture ".next" for schema-qualified names.
-                if (i < text.Length && text[i] == '.')
-                {
-                    sb.Append('.');
-                    i++;
-                    continue;
-                }
-
-                break;
-            }
-
-            if (char.IsLetterOrDigit(c) || c == '_' || c == '.' || c == '$')
-            {
-                sb.Append(c);
-                i++;
-                continue;
-            }
-
-            break;
-        }
-
-        var result = sb.ToString().Trim();
-        return result.Length == 0 ? null : result;
-    }
 
     private static string StripArgumentDefaults(string args)
     {
@@ -271,7 +195,7 @@ public static class SqlDropBuilder
         foreach (var part in parts)
         {
             var p = part.Trim();
-            var defaultIndex = IndexOfWord(p, "DEFAULT", 0);
+            var defaultIndex = SqlTokenizer.IndexOfWord(p, "DEFAULT", 0);
             if (defaultIndex >= 0)
                 p = p[..defaultIndex].Trim();
 
@@ -283,75 +207,5 @@ public static class SqlDropBuilder
         }
 
         return string.Join(", ", cleaned);
-    }
-
-    private static int IndexAfterWord(string text, string word)
-    {
-        var index = IndexOfWord(text, word, 0);
-        return index < 0 ? -1 : index + word.Length;
-    }
-
-    private static int IndexOfWord(string text, string word, int start)
-    {
-        var i = start;
-        while (i >= 0 && i <= text.Length - word.Length)
-        {
-            var found = text.IndexOf(word, i, StringComparison.OrdinalIgnoreCase);
-            if (found < 0)
-                return -1;
-
-            if (IsWordBoundary(text, found, word))
-                return found;
-
-            i = found + 1;
-        }
-
-        return -1;
-    }
-
-    private static int LastIndexOfWord(string text, string word)
-    {
-        var i = text.Length - word.Length;
-        while (i >= 0)
-        {
-            var found = text.LastIndexOf(word, i, StringComparison.OrdinalIgnoreCase);
-            if (found < 0)
-                return -1;
-
-            if (IsWordBoundary(text, found, word))
-                return found;
-
-            i = found - 1;
-        }
-
-        return -1;
-    }
-
-    private static bool IsWordBoundary(string text, int index, string word)
-    {
-        if (index > 0 && (char.IsLetterOrDigit(text[index - 1]) || text[index - 1] == '_'))
-            return false;
-
-        var after = index + word.Length;
-        if (after < text.Length && (char.IsLetterOrDigit(text[after]) || text[after] == '_'))
-            return false;
-
-        return true;
-    }
-
-    private static bool ContainsWord(string text, string word) => IndexOfWord(text, word, 0) >= 0;
-
-    private static bool StartsWithWord(string text, string word)
-    {
-        text = text.TrimStart();
-        return text.Length >= word.Length
-            && string.Equals(text[..word.Length], word, StringComparison.OrdinalIgnoreCase)
-            && (text.Length == word.Length || !char.IsLetterOrDigit(text[word.Length]));
-    }
-
-    private static string StripWord(string text, string word)
-    {
-        var index = IndexOfWord(text, word, 0);
-        return index < 0 ? text.Trim() : text[..index].Trim();
     }
 }

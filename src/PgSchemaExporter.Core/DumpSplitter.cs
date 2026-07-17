@@ -41,7 +41,7 @@ public sealed class DumpSplitter
         Directory.CreateDirectory(options.OutputDirectory);
 
         var sql = await File.ReadAllTextAsync(options.InputFile, cancellationToken);
-        var statements = _statementSplitter.Split(sql);
+        var statements = _statementSplitter.Split(sql, cache: false);
 
         var objects = statements
             .Select((statement, index) => _classifier.Classify(statement, index + 1))

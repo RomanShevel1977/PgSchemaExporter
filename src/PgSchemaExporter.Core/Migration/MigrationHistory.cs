@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace PgSchemaExporter.Core.Migration;
 
@@ -12,13 +11,6 @@ public static class MigrationHistory
 {
     public const string DefaultFileName = "history.json";
 
-    private static readonly JsonSerializerOptions SerializerOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-    };
-
     public static async Task<MigrationHistoryFile> ReadAsync(
         string path,
         CancellationToken cancellationToken = default)
@@ -30,7 +22,7 @@ public static class MigrationHistory
         if (string.IsNullOrWhiteSpace(json))
             return new MigrationHistoryFile();
 
-        return JsonSerializer.Deserialize<MigrationHistoryFile>(json, SerializerOptions)
+        return JsonSerializer.Deserialize(json, Serialization.PgSchemaExporterJsonContext.Default.MigrationHistoryFile)
             ?? new MigrationHistoryFile();
     }
 
@@ -51,7 +43,7 @@ public static class MigrationHistory
         entries.Add(entry);
 
         var updated = new MigrationHistoryFile { Migrations = entries };
-        var json = JsonSerializer.Serialize(updated, SerializerOptions);
+        var json = JsonSerializer.Serialize(updated, Serialization.PgSchemaExporterJsonContext.Default.MigrationHistoryFile);
         await File.WriteAllTextAsync(path, json, cancellationToken);
     }
 }

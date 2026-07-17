@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace PgSchemaExporter.Core.Integrity;
 
@@ -10,13 +9,6 @@ namespace PgSchemaExporter.Core.Integrity;
 public static class SchemaFingerprintFile
 {
     public const string DefaultFileName = "schema.fingerprint.json";
-
-    private static readonly JsonSerializerOptions SerializerOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-    };
 
     public static async Task WriteAsync(
         string path,
@@ -36,7 +28,7 @@ public static class SchemaFingerprintFile
         if (!string.IsNullOrEmpty(directory))
             Directory.CreateDirectory(directory);
 
-        var json = JsonSerializer.Serialize(manifest, SerializerOptions);
+        var json = JsonSerializer.Serialize(manifest, Serialization.PgSchemaExporterJsonContext.Default.SchemaFingerprintManifest);
         await File.WriteAllTextAsync(path, json, cancellationToken);
     }
 
@@ -48,7 +40,7 @@ public static class SchemaFingerprintFile
             throw new FileNotFoundException($"Fingerprint file was not found: {path}", path);
 
         var json = await File.ReadAllTextAsync(path, cancellationToken);
-        var manifest = JsonSerializer.Deserialize<SchemaFingerprintManifest>(json, SerializerOptions)
+        var manifest = JsonSerializer.Deserialize(json, Serialization.PgSchemaExporterJsonContext.Default.SchemaFingerprintManifest)
             ?? throw new InvalidOperationException($"Fingerprint file is empty or invalid: {path}");
 
         if (string.IsNullOrWhiteSpace(manifest.Fingerprint))

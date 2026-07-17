@@ -98,31 +98,13 @@ public sealed class SchemaDiffer
         var unchanged = new List<string>();
         var fileDiffs = new List<FileDiff>();
 
-        foreach (var (relativePath, rightFullPath) in right)
+        var common = new List<string>();
+        foreach (var relativePath in right.Keys)
         {
-            if (!left.TryGetValue(relativePath, out var leftFullPath))
-            {
-                added.Add(relativePath);
-                continue;
-            }
-
-            var leftLines = NormalizedLines(leftFullPath, options);
-            var rightLines = NormalizedLines(rightFullPath, options);
-
-            if (leftLines.SequenceEqual(rightLines))
-            {
-                unchanged.Add(relativePath);
-            }
+            if (left.ContainsKey(relativePath))
+                common.Add(relativePath);
             else
-            {
-                changed.Add(relativePath);
-                if (options.ShowContext)
-                    fileDiffs.Add(new FileDiff
-                    {
-                        Path = relativePath,
-                        Lines = LineDiffer.Diff(leftLines, rightLines)
-                    });
-            }
+                added.Add(relativePath);
         }
 
         foreach (var relativePath in left.Keys)
@@ -130,6 +112,39 @@ public sealed class SchemaDiffer
             if (!right.ContainsKey(relativePath))
                 removed.Add(relativePath);
         }
+
+        var parallelOptions = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = options.Parallel ? Environment.ProcessorCount : 1
+        };
+
+        Parallel.ForEach(common, parallelOptions, relativePath =>
+        {
+            var leftFullPath = left[relativePath];
+            var rightFullPath = right[relativePath];
+
+            var leftLines = NormalizedLines(leftFullPath, options);
+            var rightLines = NormalizedLines(rightFullPath, options);
+
+            if (leftLines.SequenceEqual(rightLines))
+            {
+                lock (unchanged)
+                    unchanged.Add(relativePath);
+            }
+            else
+            {
+                lock (changed)
+                {
+                    changed.Add(relativePath);
+                    if (options.ShowContext)
+                        fileDiffs.Add(new FileDiff
+                        {
+                            Path = relativePath,
+                            Lines = LineDiffer.Diff(leftLines, rightLines)
+                        });
+                }
+            }
+        });
 
         return new SchemaDiffResult
         {
