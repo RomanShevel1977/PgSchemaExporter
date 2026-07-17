@@ -717,73 +717,6 @@ public static class SqlTokenizer
         if (i >= text.Length)
             return null;
 
-        var tokenStart = i;
-
-        // Fast path: simple unquoted identifier with no schema qualifier.
-        if (text[i] != '"')
-        {
-            if (char.IsLetterOrDigit(text[i]) || text[i] == '_' || text[i] == '$')
-            {
-                while (i < text.Length && (char.IsLetterOrDigit(text[i]) || text[i] == '_' || text[i] == '$'))
-                    i++;
-
-                if (i == text.Length || text[i] != '.')
-                {
-                    after = i;
-                    var raw = text.Substring(tokenStart, i - tokenStart);
-                    return unquote ? UnquoteQualified(raw) : raw;
-                }
-            }
-
-            i = tokenStart;
-        }
-        else
-        {
-            // Fast path: simple quoted identifier without escapes or schema qualifier.
-            i++;
-            var contentStart = i;
-            var hasEscape = false;
-            while (i < text.Length)
-            {
-                if (text[i] == '"')
-                {
-                    if (i + 1 < text.Length && text[i + 1] == '"')
-                    {
-                        hasEscape = true;
-                        i += 2;
-                        continue;
-                    }
-                    break;
-                }
-                i++;
-            }
-
-            if (i < text.Length && text[i] == '"')
-            {
-                var closing = i;
-                if (closing + 1 >= text.Length || text[closing + 1] != '.')
-                {
-                    after = closing + 1;
-                    if (!unquote)
-                        return text.Substring(tokenStart, closing - tokenStart + 1);
-
-                    if (!hasEscape)
-                        return text.Substring(contentStart, closing - contentStart);
-
-                    var escaped = new StringBuilder(closing - contentStart);
-                    for (var k = contentStart; k < closing; k++)
-                    {
-                        escaped.Append(text[k]);
-                        if (text[k] == '"' && k + 1 < closing && text[k + 1] == '"')
-                            k++;
-                    }
-                    return escaped.ToString();
-                }
-            }
-
-            i = tokenStart;
-        }
-
         var sb = new StringBuilder();
         while (i < text.Length)
         {
@@ -847,43 +780,6 @@ public static class SqlTokenizer
 
     private static string UnquoteQualified(string raw)
     {
-        if (string.IsNullOrEmpty(raw))
-            return raw;
-
-        if (raw.IndexOf('.') < 0)
-        {
-            if (raw.Length >= 2 && raw[0] == '"' && raw[raw.Length - 1] == '"')
-            {
-                if (raw.Length == 2)
-                    return string.Empty;
-
-                var hasEscapedQuote = false;
-                for (var i = 1; i < raw.Length - 1; i++)
-                {
-                    if (raw[i] == '"' && raw[i + 1] == '"')
-                    {
-                        hasEscapedQuote = true;
-                        i++;
-                    }
-                }
-
-                if (!hasEscapedQuote)
-                    return raw.Substring(1, raw.Length - 2);
-
-                var sb = new StringBuilder(raw.Length - 2);
-                for (var i = 1; i < raw.Length - 1; i++)
-                {
-                    sb.Append(raw[i]);
-                    if (raw[i] == '"' && i + 1 < raw.Length - 1 && raw[i + 1] == '"')
-                        i++;
-                }
-
-                return sb.ToString();
-            }
-
-            return raw;
-        }
-
         var parts = SplitTopLevel(raw, '.');
         var result = new StringBuilder(raw.Length);
         var first = true;

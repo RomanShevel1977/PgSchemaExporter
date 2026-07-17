@@ -10,4 +10,4 @@ WarmupCount=3
 
  Method       | Mean     | Error    | StdDev   | Allocated |
 ------------- |---------:|---------:|---------:|----------:|
- LoadMetadata | 45.36 ms | 13.04 ms | 0.715 ms | 160.65 KB |
+ LoadMetadata | 44.98 ms | 93.20 ms | 5.109 ms | 160.78 KB |

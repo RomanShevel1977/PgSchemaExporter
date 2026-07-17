@@ -10,4 +10,4 @@ WarmupCount=3
 
  Method | Mean     | Error    | StdDev    | Allocated |
 ------- |---------:|---------:|----------:|----------:|
- Diff   | 5.397 ms | 4.140 ms | 0.2269 ms |  53.19 KB |
+ Diff   | 5.371 ms | 5.397 ms | 0.2959 ms |  53.19 KB |

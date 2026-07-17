@@ -1,0 +1,126 @@
+// Validating benchmarks:
+// ***** BenchmarkRunner: Start   *****
+// ***** Found 1 benchmark(s) in total *****
+// ***** Building 1 exe(s) in Parallel: Start   *****
+Unable to find .sln or .csproj file. Will use current directory D:\Projects\PgSchemaExporter to search for project file. If you don't use .sln file on purpose it should not be a problem.
+// start dotnet  restore /p:UseSharedCompilation=false /p:BuildInParallel=false /m:1 /p:Deterministic=true /p:Optimize=true in D:\Projects\PgSchemaExporter\tests\PgSchemaExporter.Benchmarks\bin\Release\net8.0\2bb11f43-528b-4d9f-af53-9d1588dc7bd3
+// command took 2.64 sec and exited with 0
+// start dotnet  build -c Release --no-restore /p:UseSharedCompilation=false /p:BuildInParallel=false /m:1 /p:Deterministic=true /p:Optimize=true in D:\Projects\PgSchemaExporter\tests\PgSchemaExporter.Benchmarks\bin\Release\net8.0\2bb11f43-528b-4d9f-af53-9d1588dc7bd3
+// command took 3.92 sec and exited with 0
+// ***** Done, took 00:00:06 (6.67 sec)   *****
+// Found 1 benchmarks:
+//   MigrationGeneratorBenchmark.Generate: ShortRun(IterationCount=3, LaunchCount=1, WarmupCount=3)
+
+Setup power plan (GUID: 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c FriendlyName: High performance)
+// **************************
+// Benchmark: MigrationGeneratorBenchmark.Generate: ShortRun(IterationCount=3, LaunchCount=1, WarmupCount=3)
+// *** Execute ***
+// Launch: 1 / 1
+// Execute: dotnet 2bb11f43-528b-4d9f-af53-9d1588dc7bd3.dll --anonymousPipes 2328 2300 --benchmarkName PgSchemaExporter.Benchmarks.MigrationGeneratorBenchmark.Generate --job ShortRun --benchmarkId 0 in D:\Projects\PgSchemaExporter\tests\PgSchemaExporter.Benchmarks\bin\Release\net8.0\2bb11f43-528b-4d9f-af53-9d1588dc7bd3\bin\Release\net8.0
+// BeforeAnythingElse
+
+// Benchmark Process Environment Information:
+// BenchmarkDotNet v0.13.12
+// Runtime=.NET 8.0.28 (8.0.2826.26413), X64 RyuJIT AVX2
+// GC=Concurrent Workstation
+// HardwareIntrinsics=AVX2,AES,BMI1,BMI2,FMA,LZCNT,PCLMUL,POPCNT VectorSize=256
+// Job: ShortRun(IterationCount=3, LaunchCount=1, WarmupCount=3)
+
+OverheadJitting  1: 1 op, 322900.00 ns, 322.9000 us/op
+WorkloadJitting  1: 1 op, 78598200.00 ns, 78.5982 ms/op
+
+WorkloadPilot    1: 2 op, 114377200.00 ns, 57.1886 ms/op
+WorkloadPilot    2: 3 op, 158797000.00 ns, 52.9323 ms/op
+WorkloadPilot    3: 4 op, 215700800.00 ns, 53.9252 ms/op
+WorkloadPilot    4: 5 op, 264471600.00 ns, 52.8943 ms/op
+WorkloadPilot    5: 6 op, 311543200.00 ns, 51.9239 ms/op
+WorkloadPilot    6: 7 op, 389863800.00 ns, 55.6948 ms/op
+WorkloadPilot    7: 8 op, 450933200.00 ns, 56.3666 ms/op
+WorkloadPilot    8: 9 op, 474350000.00 ns, 52.7056 ms/op
+WorkloadPilot    9: 10 op, 478079900.00 ns, 47.8080 ms/op
+WorkloadPilot   10: 11 op, 534096200.00 ns, 48.5542 ms/op
+
+WorkloadWarmup   1: 11 op, 524022500.00 ns, 47.6384 ms/op
+WorkloadWarmup   2: 11 op, 525073600.00 ns, 47.7340 ms/op
+WorkloadWarmup   3: 11 op, 516362700.00 ns, 46.9421 ms/op
+
+// BeforeActualRun
+WorkloadActual   1: 11 op, 517190000.00 ns, 47.0173 ms/op
+WorkloadActual   2: 11 op, 515001600.00 ns, 46.8183 ms/op
+WorkloadActual   3: 11 op, 524562900.00 ns, 47.6875 ms/op
+
+// AfterActualRun
+WorkloadResult   1: 11 op, 517190000.00 ns, 47.0173 ms/op
+WorkloadResult   2: 11 op, 515001600.00 ns, 46.8183 ms/op
+WorkloadResult   3: 11 op, 524562900.00 ns, 47.6875 ms/op
+// GC:  6 1 0 50773688 11
+// Threading:  0 0 11
+
+// AfterAll
+// Benchmark Process 18836 has exited with code 0.
+
+Mean = 47.174 ms, StdErr = 0.263 ms (0.56%), N = 3, StdDev = 0.455 ms
+Min = 46.818 ms, Q1 = 46.918 ms, Median = 47.017 ms, Q3 = 47.352 ms, Max = 47.688 ms
+IQR = 0.435 ms, LowerFence = 46.266 ms, UpperFence = 48.004 ms
+ConfidenceInterval = [38.866 ms; 55.483 ms] (CI 99.9%), Margin = 8.308 ms (17.61% of Mean)
+Skewness = 0.3, Kurtosis = 0.67, MValue = 2
+
+// ** Remained 0 (0.0%) benchmark(s) to run. Estimated finish 2026-07-17 14:04 (0h 0m from now) **
+Successfully reverted power plan (GUID: 381b4222-f694-41f0-9685-ff5bb260df2e FriendlyName: Balanced)
+// ***** BenchmarkRunner: Finish  *****
+
+// * Export *
+  BenchmarkDotNet.Artifacts\results\PgSchemaExporter.Benchmarks.MigrationGeneratorBenchmark-report.csv
+  BenchmarkDotNet.Artifacts\results\PgSchemaExporter.Benchmarks.MigrationGeneratorBenchmark-report-github.md
+  BenchmarkDotNet.Artifacts\results\PgSchemaExporter.Benchmarks.MigrationGeneratorBenchmark-report.html
+
+// * Detailed results *
+MigrationGeneratorBenchmark.Generate: ShortRun(IterationCount=3, LaunchCount=1, WarmupCount=3)
+Runtime = .NET 8.0.28 (8.0.2826.26413), X64 RyuJIT AVX2; GC = Concurrent Workstation
+Mean = 47.174 ms, StdErr = 0.263 ms (0.56%), N = 3, StdDev = 0.455 ms
+Min = 46.818 ms, Q1 = 46.918 ms, Median = 47.017 ms, Q3 = 47.352 ms, Max = 47.688 ms
+IQR = 0.435 ms, LowerFence = 46.266 ms, UpperFence = 48.004 ms
+ConfidenceInterval = [38.866 ms; 55.483 ms] (CI 99.9%), Margin = 8.308 ms (17.61% of Mean)
+Skewness = 0.3, Kurtosis = 0.67, MValue = 2
+-------------------- Histogram --------------------
+[46.404 ms ; 48.102 ms) | @@@
+---------------------------------------------------
+
+// * Summary *
+
+BenchmarkDotNet v0.13.12, Windows 11 (10.0.26100.8875)
+Intel Core i9-9900K CPU 3.60GHz (Coffee Lake), 1 CPU, 16 logical and 8 physical cores
+.NET SDK 10.0.301
+  [Host]   : .NET 8.0.28 (8.0.2826.26413), X64 RyuJIT AVX2
+  ShortRun : .NET 8.0.28 (8.0.2826.26413), X64 RyuJIT AVX2
+
+Job=ShortRun  IterationCount=3  LaunchCount=1  
+WarmupCount=3  
+
+| Method   | Mean     | Error    | StdDev   | Gen0     | Gen1    | Allocated |
+|--------- |---------:|---------:|---------:|---------:|--------:|----------:|
+| Generate | 47.17 ms | 8.308 ms | 0.455 ms | 545.4545 | 90.9091 |    4.4 MB |
+// * Config Issues *
+
+// * Warnings *
+Configuration
+  Summary -> The exporter CsvExporter is already present in configuration. There may be unexpected results.
+
+// * Legends *
+  Mean      : Arithmetic mean of all measurements
+  Error     : Half of 99.9% confidence interval
+  StdDev    : Standard deviation of all measurements
+  Gen0      : GC Generation 0 collects per 1000 operations
+  Gen1      : GC Generation 1 collects per 1000 operations
+  Allocated : Allocated memory per single operation (managed only, inclusive, 1KB = 1024B)
+  1 ms      : 1 Millisecond (0.001 sec)
+
+// * Diagnostic Output - MemoryDiagnoser *
+
+
+// ***** BenchmarkRunner: End *****
+Run time: 00:00:08 (8.81 sec), executed benchmarks: 1
+
+Global total time: 00:00:15 (15.77 sec), executed benchmarks: 1
+// * Artifacts cleanup *
+Artifacts cleanup is finished

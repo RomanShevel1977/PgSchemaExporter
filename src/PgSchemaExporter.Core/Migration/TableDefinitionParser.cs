@@ -1,3 +1,4 @@
+using System.Text;
 using PgSchemaExporter.Core.Scripting;
 
 namespace PgSchemaExporter.Core.Migration;
@@ -19,47 +20,28 @@ public static class TableDefinitionParser
         if (string.IsNullOrWhiteSpace(sql))
             return null;
 
-        var createIndex = SqlTokenizer.IndexOfWord(sql, "CREATE", 0);
+        var createIndex = sql.IndexOf("CREATE", StringComparison.OrdinalIgnoreCase);
         if (createIndex < 0)
             return null;
 
         // Locate the " TABLE " keyword and the qualified name that follows it.
-        var tableKeyword = SqlTokenizer.IndexOfWord(sql, "TABLE", createIndex, out var tableLength);
+        var tableKeyword = IndexOfWord(sql, "TABLE", createIndex);
         if (tableKeyword < 0)
             return null;
 
-        var afterTable = tableKeyword + tableLength;
+        var afterTable = tableKeyword + "TABLE".Length;
 
-        // Skip optional leading noise (IF NOT EXISTS, ONLY) before the table name.
-        var remaining = sql[afterTable..];
-        while (true)
-        {
-            var trimmed = remaining.TrimStart();
-            var skippedWhitespace = remaining.Length - trimmed.Length;
+        // Skip an optional "IF NOT EXISTS".
+        var ifNotExists = IndexOfWord(sql, "IF NOT EXISTS", afterTable);
+        if (ifNotExists >= 0 && ifNotExists <= afterTable + 2)
+            afterTable = ifNotExists + "IF NOT EXISTS".Length;
 
-            if (SqlTokenizer.StartsWithWord(trimmed, "IF NOT EXISTS"))
-            {
-                afterTable += skippedWhitespace + "IF NOT EXISTS".Length;
-                remaining = sql[afterTable..];
-                continue;
-            }
-
-            if (SqlTokenizer.StartsWithWord(trimmed, "ONLY"))
-            {
-                afterTable += skippedWhitespace + "ONLY".Length;
-                remaining = sql[afterTable..];
-                continue;
-            }
-
-            break;
-        }
-
-        var qualifiedName = SqlTokenizer.ReadIdentifier(sql, afterTable, out var afterName, unquote: false);
-        if (string.IsNullOrEmpty(qualifiedName))
+        var openParen = sql.IndexOf('(', afterTable);
+        if (openParen < 0)
             return null;
 
-        var openParen = sql.IndexOf('(', afterName);
-        if (openParen < 0)
+        var qualifiedName = SkipLeadingNoise(sql[afterTable..openParen].Trim());
+        if (qualifiedName.Length == 0)
             return null;
 
         var closeParen = SqlTokenizer.FindMatchingParen(sql, openParen);
@@ -96,11 +78,12 @@ public static class TableDefinitionParser
 
     private static ParsedColumn? ParseColumn(string text)
     {
-        var name = SqlTokenizer.ReadIdentifier(text, 0, out var nameEnd, unquote: true);
-        if (name is null)
+        var nameEnd = ReadQuotedIdentifierEnd(text);
+        if (nameEnd < 0)
             return null;
 
-        var definition = text[nameEnd..].Trim();
+        var name = UnquoteIdentifier(text[..(nameEnd + 1)]);
+        var definition = text[(nameEnd + 1)..].Trim();
         if (definition.Length == 0)
             return null;
 
@@ -192,7 +175,7 @@ public static class TableDefinitionParser
 
             foreach (var keyword in ClauseKeywords)
             {
-                if (SqlTokenizer.MatchesWordAt(definition, i, keyword))
+                if (MatchesWordAt(definition, i, keyword))
                 {
                     // Avoid double-matching "NULL" when it is part of "NOT NULL".
                     if (keyword == "NULL" && results.Count > 0 && results[^1].Item1 == "NOT NULL")
@@ -211,6 +194,41 @@ public static class TableDefinitionParser
         return results;
     }
 
+    private static string SkipLeadingNoise(string text)
+    {
+        text = text.TrimStart();
+
+        while (true)
+        {
+            if (MatchesWordAt(text, 0, "IF NOT EXISTS"))
+                text = text["IF NOT EXISTS".Length..].TrimStart();
+            else if (MatchesWordAt(text, 0, "ONLY"))
+                text = text["ONLY".Length..].TrimStart();
+            else
+                break;
+        }
+
+        return text;
+    }
+
+    private static bool MatchesWordAt(string text, int index, string word)
+    {
+        if (index + word.Length > text.Length)
+            return false;
+
+        if (!string.Equals(text.Substring(index, word.Length), word, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (index > 0 && (char.IsLetterOrDigit(text[index - 1]) || text[index - 1] == '_'))
+            return false;
+
+        var after = index + word.Length;
+        if (after < text.Length && (char.IsLetterOrDigit(text[after]) || text[after] == '_'))
+            return false;
+
+        return true;
+    }
+
     private static bool StartsWithConstraintKeyword(string text)
     {
         ReadOnlySpan<string> keywords =
@@ -220,10 +238,59 @@ public static class TableDefinitionParser
 
         foreach (var keyword in keywords)
         {
-            if (SqlTokenizer.MatchesWordAt(text, 0, keyword))
+            if (MatchesWordAt(text, 0, keyword))
                 return true;
         }
 
         return false;
+    }
+
+    private static int ReadQuotedIdentifierEnd(string text)
+    {
+        if (text.Length == 0 || text[0] != '"')
+            return -1;
+
+        for (var i = 1; i < text.Length; i++)
+        {
+            if (text[i] != '"')
+                continue;
+
+            // Escaped quote ("") inside the identifier.
+            if (i + 1 < text.Length && text[i + 1] == '"')
+            {
+                i++;
+                continue;
+            }
+
+            return i;
+        }
+
+        return -1;
+    }
+
+    private static string UnquoteIdentifier(string quoted)
+    {
+        if (quoted.Length >= 2 && quoted[0] == '"' && quoted[^1] == '"')
+            return quoted[1..^1].Replace("\"\"", "\"");
+
+        return quoted;
+    }
+
+    private static int IndexOfWord(string text, string word, int start)
+    {
+        var i = start;
+        while (i >= 0 && i <= text.Length - word.Length)
+        {
+            var found = text.IndexOf(word, i, StringComparison.OrdinalIgnoreCase);
+            if (found < 0)
+                return -1;
+
+            if (MatchesWordAt(text, found, word))
+                return found;
+
+            i = found + 1;
+        }
+
+        return -1;
     }
 }

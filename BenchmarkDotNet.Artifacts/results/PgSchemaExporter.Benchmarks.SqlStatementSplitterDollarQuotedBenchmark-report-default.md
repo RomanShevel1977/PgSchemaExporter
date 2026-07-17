@@ -10,4 +10,4 @@ WarmupCount=3
 
  Method | Mean     | Error    | StdDev   | Allocated |
 ------- |---------:|---------:|---------:|----------:|
- Split  | 48.02 μs | 8.038 μs | 0.441 μs |         - |
+ Split  | 45.44 μs | 11.60 μs | 0.636 μs |         - |
