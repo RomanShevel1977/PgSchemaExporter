@@ -17,7 +17,7 @@ using PgSchemaExporter.Core.Options;
 using PgSchemaExporter.Core.Output;
 using PgSchemaExporter.Core.Scripting;
 
-const string VersionString = "1.9.0";
+const string VersionString = "2.0.0";
 
 if (args.Length == 0 || args.Contains("--help") || args.Contains("-h"))
 {
@@ -109,7 +109,7 @@ static Verbosity ResolveVerbosity(string[] args)
 static void PrintHelp()
 {
     Console.WriteLine("""
-PostgreSQL Git-Native Schema Exporter 1.9.0
+PostgreSQL Git-Native Schema Exporter 2.0.0
 
 Usage:
   pgschema-export init [--output "./pgschema-export.json"]
