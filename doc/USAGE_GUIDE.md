@@ -1,6 +1,6 @@
 # PgSchemaExporter Usage Guide
 
-Complete guide to the `pgschema-export` utility for exporting, comparing, and migrating PostgreSQL schemas.
+Complete guide to the `pgschema-export` utility for exporting, comparing, migrating, and validating PostgreSQL schemas.
 
 ## Table of Contents
 
@@ -14,6 +14,9 @@ Complete guide to the `pgschema-export` utility for exporting, comparing, and mi
    - [watch](#watch---monitor-schema-changes)
    - [migrate](#migrate---generate-migrations)
    - [diagram](#diagram---generate-er-diagram)
+   - [drift](#drift)
+   - [plan and apply](#plan-and-apply)
+   - [fingerprint](#fingerprint)
 4. [Common Parameters](#common-parameters)
 5. [Object Types](#object-types)
 6. [Usage Examples](#usage-examples)
@@ -28,7 +31,10 @@ Complete guide to the `pgschema-export` utility for exporting, comparing, and mi
 - Exporting schemas from live PostgreSQL databases
 - Splitting existing SQL dumps into separate files
 - Comparing two schemas and finding differences
+- Detecting schema drift against a live database
 - Generating migration scripts between schema versions
+- Reviewing and applying declarative migration plans
+- Validating schema fingerprints
 - Monitoring schema changes in real-time
 - Generating ER diagrams (Mermaid and Graphviz DOT)
 - Profiling command performance
@@ -42,12 +48,12 @@ Complete guide to the `pgschema-export` utility for exporting, comparing, and mi
 ### Building from Source
 
 ```bash
-dotnet build src/PgSchemaExporter.sln
+dotnet build src/PgSchemaExporter.Cli/PgSchemaExporter.Cli.csproj -c Release
 ```
 
 After building, the executable is located at:
-- `src/PgSchemaExporter.Cli/bin/Debug/net8.0/PgSchemaExporter.Cli.exe` (Windows)
-- `src/PgSchemaExporter.Cli/bin/Debug/net8.0/PgSchemaExporter.Cli` (Linux/macOS)
+- `src/PgSchemaExporter.Cli/bin/Release/net8.0/PgSchemaExporter.Cli.exe` (Windows)
+- `src/PgSchemaExporter.Cli/bin/Release/net8.0/PgSchemaExporter.Cli` (Linux/macOS)
 
 ### Checking Version
 
@@ -647,6 +653,10 @@ pgschema-export migrate --from "<baseline>" --to "<target>" --output "<directory
 | `--name` | `-n` | Optional name appended to file names | - |
 | `--safe` | | Emit destructive statements as comments | false |
 | `--preview` | | Print migration to stdout without writing files | false |
+| `--online-ddl` | | Rewrite `CREATE`/`DROP INDEX` to `CONCURRENTLY` forms outside the transaction | false |
+| `--lock-timeout` | | Emit `SET lock_timeout` guard (e.g. `5s`) | - |
+| `--statement-timeout` | | Emit `SET statement_timeout` guard (e.g. `1min`) | - |
+| `--warn-hazards` | | Print a hazard analysis of the migration | false |
 
 #### Migration File Naming
 
@@ -680,6 +690,10 @@ pgschema-export migrate \
 ```
 
 Files: `20240105143000_add_user_email_field_up.sql` and `20240105143000_add_user_email_field_down.sql`
+
+#### Migration History
+
+Every generated migration is recorded in `migrations/history.json` with timestamps, source/target schema directories, applied status, and a destructive flag. This provides an auditable trail of all migrations produced by the tool.
 
 **Safe mode (destructive as comments):**
 ```bash
@@ -834,6 +848,168 @@ pgschema-export diagram \
   --output "schema.txt" \
   --format mermaid
 ```
+
+### drift
+
+Detects changes between a committed schema directory and a live database. Reports unexpected, missing, and modified objects.
+
+#### Syntax
+
+```bash
+pgschema-export drift --schema "<directory>" --connection "<conn>" [options]
+```
+
+#### Parameters
+
+| Parameter | Short | Description | Default |
+|-----------|-------|-------------|---------|
+| `--schema` | `-s` | Exported schema directory | Required |
+| `--connection` | `-c` | Live PostgreSQL connection string | Required |
+| `--output` | `-o` | File to write the report to | stdout |
+| `--format` | | `text` or `json` | text |
+
+#### Exit codes
+
+- `0` — no drift detected
+- `2` — drift detected
+
+#### Examples
+
+**Text report:**
+```bash
+pgschema-export drift \
+  --schema "./db-schema" \
+  --connection "Host=localhost;Database=mydb;Username=postgres;Password=secret"
+```
+
+**JSON report for CI:**
+```bash
+pgschema-export drift \
+  --schema "./db-schema" \
+  --connection "Host=localhost;Database=mydb;Username=postgres;Password=secret" \
+  --format json \
+  --output drift-report.json
+```
+
+---
+
+### plan and apply
+
+A Terraform-style declarative workflow. `plan` produces a reviewable JSON or text plan; `apply` runs it against a live database.
+
+#### plan
+
+##### Syntax
+
+```bash
+pgschema-export plan --from "<baseline>" --to "<target>" --output "<file>" [options]
+```
+
+##### Parameters
+
+| Parameter | Short | Description | Default |
+|-----------|-------|-------------|---------|
+| `--from` | `-f` | Baseline exported schema directory | Required |
+| `--to` | `-t` | Target exported schema directory | Required |
+| `--output` | `-o` | Plan file path | Required |
+| `--format` | | `text` or `json` | text |
+| `--online-ddl` | | Rewrite index statements to `CONCURRENTLY` | false |
+| `--lock-timeout` | | `SET lock_timeout` guard value | - |
+| `--statement-timeout` | | `SET statement_timeout` guard value | - |
+| `--safe` | | Skip destructive statements in the plan | false |
+| `--warn-hazards` | | Include hazard analysis in the plan | false |
+
+##### Examples
+
+```bash
+pgschema-export plan \
+  --from "./db-schema" \
+  --to "./db-schema-new" \
+  --output plan.json \
+  --online-ddl \
+  --lock-timeout 5s \
+  --statement-timeout 1min
+```
+
+The plan file contains up/down SQL, render settings, and a hazard analysis.
+
+#### apply
+
+##### Syntax
+
+```bash
+pgschema-export apply --plan "<file>" --connection "<conn>" [options]
+```
+
+##### Parameters
+
+| Parameter | Short | Description | Default |
+|-----------|-------|-------------|---------|
+| `--plan` | `-p` | Path to the plan file produced by `plan` | Required |
+| `--connection` | `-c` | Live PostgreSQL connection string | Required |
+| `--dry-run` | | Print statements without executing | false |
+| `--rollback` | | Apply the down direction | false |
+| `--yes` | | Skip confirmation prompt | false |
+
+##### Examples
+
+```bash
+# Preview
+pgschema-export apply --plan plan.json --connection "<conn>" --dry-run
+
+# Apply
+pgschema-export apply --plan plan.json --connection "<conn>"
+
+# Rollback
+pgschema-export apply --plan plan.json --connection "<conn>" --rollback --yes
+```
+
+Transactional statements run inside a single transaction. `CONCURRENTLY` index statements run outside it.
+
+---
+
+### fingerprint
+
+Generates or verifies a deterministic SHA256 hash of an exported schema directory.
+
+#### Syntax
+
+```bash
+pgschema-export fingerprint --schema "<directory>" --output "<file>" [--verify "<file>"]
+```
+
+#### Parameters
+
+| Parameter | Short | Description | Default |
+|-----------|-------|-------------|---------|
+| `--schema` | `-s` | Exported schema directory | Required |
+| `--output` | `-o` | Fingerprint file to write | Required* |
+| `--verify` | | Fingerprint file to verify against | - |
+
+\* Required when not using `--verify`.
+
+#### Exit codes
+
+- `0` — match / generated successfully
+- `2` — mismatch or schema changed
+
+#### Examples
+
+**Generate a fingerprint:**
+```bash
+pgschema-export fingerprint \
+  --schema "./db-schema" \
+  --output ./db-schema/schema.fingerprint.json
+```
+
+**Verify later:**
+```bash
+pgschema-export fingerprint \
+  --schema "./db-schema" \
+  --verify ./db-schema/schema.fingerprint.json
+```
+
+The fingerprint normalizes line endings and ignores file ordering, so it is stable across platforms.
 
 ---
 
@@ -1257,7 +1433,8 @@ pgschema-export watch \
 
 ## Additional Resources
 
-- **README.md**: Project overview and quick start
-- **RELEASE_NOTES_1.9.0.md**: Detailed release notes for current version
-- **PostgreSQL Documentation**: https://www.postgresql.org/docs/
-- **Npgsql Documentation**: https://www.npgsql.org/doc/
+- **[README.md](../README.md)**: Project overview and quick start
+- **[Performance Refactoring Report](Performance_Refactoring_Report_Full.md)**: Detailed benchmarks and optimization notes
+- **[RELEASE_NOTES_1.9.0.md](../RELEASE_NOTES_1.9.0.md)**: Detailed release notes for current version
+- **[PostgreSQL Documentation](https://www.postgresql.org/docs/)**
+- **[Npgsql Documentation](https://www.npgsql.org/doc/)**
