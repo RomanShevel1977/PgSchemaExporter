@@ -1341,7 +1341,7 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
 
     private static void AddSchemaParameters(NpgsqlCommand command, ExportOptions options)
     {
-        command.Parameters.AddWithValue("schemas", options.Schemas);
+        command.Parameters.AddWithValue("schemas", options.EffectiveSchemas);
         command.Parameters.AddWithValue("excludeSchemas", options.ExcludeSchemas);
     }
 

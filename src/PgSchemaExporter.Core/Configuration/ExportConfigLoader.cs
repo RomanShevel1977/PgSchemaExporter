@@ -1,6 +1,6 @@
 using System.Text.Json;
-using System.Text.Json.Serialization.Metadata;
 using PgSchemaExporter.Core.Options;
+using PgSchemaExporter.Core.Serialization;
 
 namespace PgSchemaExporter.Core.Configuration;
 
@@ -24,15 +24,15 @@ public static class ExportConfigLoader
         ExportOptions? options;
         try
         {
-            options = JsonSerializer.Deserialize<ExportOptions>(
-                json,
-                new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true,
-                    ReadCommentHandling = JsonCommentHandling.Skip,
-                    AllowTrailingCommas = true,
-                    TypeInfoResolver = new DefaultJsonTypeInfoResolver()
-                });
+            var serializerOptions = new JsonSerializerOptions(PgSchemaExporterJsonContext.Default.Options)
+            {
+                PropertyNameCaseInsensitive = true,
+                ReadCommentHandling = JsonCommentHandling.Skip,
+                AllowTrailingCommas = true,
+                TypeInfoResolver = PgSchemaExporterJsonContext.Default
+            };
+
+            options = JsonSerializer.Deserialize<ExportOptions>(json, serializerOptions);
         }
         catch (JsonException ex)
         {
@@ -52,7 +52,6 @@ public static class ExportConfigLoader
         if (errors.Count > 0)
             throw new ConfigValidationException(configPath, errors);
 
-        options.EnsureValidForExport();
         return options;
     }
 }

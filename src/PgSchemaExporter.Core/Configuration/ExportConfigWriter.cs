@@ -1,6 +1,6 @@
 using System.Text.Json;
-using System.Text.Json.Serialization.Metadata;
 using PgSchemaExporter.Core.Options;
+using PgSchemaExporter.Core.Serialization;
 
 namespace PgSchemaExporter.Core.Configuration;
 
@@ -26,12 +26,7 @@ public static class ExportConfigWriter
             Format = new FormatOptions()
         };
 
-        return JsonSerializer.Serialize(template, new JsonSerializerOptions
-        {
-            WriteIndented = true,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            TypeInfoResolver = new DefaultJsonTypeInfoResolver()
-        });
+        return JsonSerializer.Serialize(template, PgSchemaExporterJsonContext.Default.ExportOptions);
     }
 
     /// <summary>

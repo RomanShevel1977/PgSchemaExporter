@@ -44,6 +44,10 @@ public static class TableDefinitionParser
         if (qualifiedName.Length == 0)
             return null;
 
+        var (schema, name) = SplitQualifiedName(qualifiedName);
+        if (string.IsNullOrEmpty(name))
+            return null;
+
         var closeParen = SqlTokenizer.FindMatchingParen(sql, openParen);
         if (closeParen < 0)
             return null;
@@ -61,19 +65,19 @@ public static class TableDefinitionParser
             // Inline table constraints are not handled semantically; bail out so the
             // caller can fall back to a safe drop/recreate strategy.
             if (StartsWithConstraintKeyword(trimmed))
-                return new ParsedTable { QualifiedName = qualifiedName, Columns = [], IsParseable = false };
+                return new ParsedTable { Schema = schema, Name = name, Columns = [], IsParseable = false };
 
             if (trimmed[0] != '"')
-                return new ParsedTable { QualifiedName = qualifiedName, Columns = [], IsParseable = false };
+                return new ParsedTable { Schema = schema, Name = name, Columns = [], IsParseable = false };
 
             var column = ParseColumn(trimmed);
             if (column is null)
-                return new ParsedTable { QualifiedName = qualifiedName, Columns = [], IsParseable = false };
+                return new ParsedTable { Schema = schema, Name = name, Columns = [], IsParseable = false };
 
             columns.Add(column);
         }
 
-        return new ParsedTable { QualifiedName = qualifiedName, Columns = columns };
+        return new ParsedTable { Schema = schema, Name = name, Columns = columns };
     }
 
     private static ParsedColumn? ParseColumn(string text)
@@ -292,5 +296,17 @@ public static class TableDefinitionParser
         }
 
         return -1;
+    }
+
+    private static (string Schema, string Name) SplitQualifiedName(string qualifiedName)
+    {
+        var parts = SqlTokenizer.SplitTopLevel(qualifiedName, '.');
+        if (parts.Count == 0)
+            return ("", "");
+
+        if (parts.Count == 1)
+            return ("", UnquoteIdentifier(parts[0].Trim()));
+
+        return (UnquoteIdentifier(parts[0].Trim()), UnquoteIdentifier(parts[^1].Trim()));
     }
 }

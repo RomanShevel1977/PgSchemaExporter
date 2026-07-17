@@ -22,12 +22,23 @@ public sealed class SchemaExporter
         SchemaFileWriter schemaFileWriter,
         DeployScriptWriter deployScriptWriter,
         ReadmeWriter readmeWriter)
+        : this(metadataProvider, schemaFileWriter, deployScriptWriter, readmeWriter, new DependencyManifestWriter(), new DeploymentPlanBuilder())
+    {
+    }
+
+    public SchemaExporter(
+        IMetadataProvider metadataProvider,
+        SchemaFileWriter schemaFileWriter,
+        DeployScriptWriter deployScriptWriter,
+        ReadmeWriter readmeWriter,
+        DependencyManifestWriter dependencyManifestWriter,
+        DeploymentPlanBuilder deploymentPlanBuilder)
     {
         _metadataProvider = metadataProvider;
         _schemaFileWriter = schemaFileWriter;
         _deployScriptWriter = deployScriptWriter;
-        _dependencyManifestWriter = new DependencyManifestWriter();
-        _deploymentPlanBuilder = new DeploymentPlanBuilder();
+        _dependencyManifestWriter = dependencyManifestWriter;
+        _deploymentPlanBuilder = deploymentPlanBuilder;
         _readmeWriter = readmeWriter;
     }
 

@@ -12,18 +12,30 @@ public sealed class ExportOptions
     public IncludeOptions Include { get; set; } = new();
     public FormatOptions Format { get; set; } = new();
 
+    /// <summary>
+    /// Returns the schemas trimmed, de-duplicated (case-insensitive), and with empty entries removed.
+    /// Callers that need the validated/normalized list should use this instead of <see cref="Schemas"/>.
+    /// </summary>
+    public string[] EffectiveSchemas
+        => NormalizeSchemas(Schemas);
+
+    private static string[] NormalizeSchemas(string[] schemas)
+    {
+        if (schemas is null || schemas.Length == 0)
+            return [];
+
+        return schemas
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
     public void EnsureValidForExport()
     {
         var errors = Validate();
         if (errors.Count > 0)
             throw new ArgumentException(string.Join(" ", errors));
-
-        // Normalize schemas: trim whitespace and remove duplicates
-        Schemas = Schemas
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Select(x => x.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
     }
 
     /// <summary>
@@ -40,9 +52,11 @@ public sealed class ExportOptions
         if (string.IsNullOrWhiteSpace(OutputDirectory))
             errors.Add("Output directory is required. Set 'outputDirectory' (or pass --output).");
 
-        if (Schemas is null || Schemas.Length == 0 || Schemas.All(string.IsNullOrWhiteSpace))
+        var effective = EffectiveSchemas;
+        if (effective.Length == 0)
             errors.Add("At least one schema is required. Set 'schemas' to a non-empty list (e.g. [\"public\"]).");
-        else if (Schemas.Any(string.IsNullOrWhiteSpace))
+
+        if (Schemas is not null && Schemas.Any(string.IsNullOrWhiteSpace))
             errors.Add("The 'schemas' list contains empty entries. Remove blank values.");
 
         if (Include is null)

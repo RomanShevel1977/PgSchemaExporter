@@ -531,6 +531,9 @@ public static class SqlTokenizer
         if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(word) || start < 0 || start > text.Length)
             return -1;
 
+        if (word.IndexOf(' ') < 0)
+            return IndexOfSingleWord(text, word, start, out matchedLength);
+
         var words = word.Split([' '], StringSplitOptions.RemoveEmptyEntries);
         if (words.Length == 0)
             return -1;
@@ -604,6 +607,9 @@ public static class SqlTokenizer
         if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(word))
             return -1;
 
+        if (word.IndexOf(' ') < 0)
+            return LastIndexOfSingleWord(text, word, start);
+
         var words = word.Split([' '], StringSplitOptions.RemoveEmptyEntries);
         if (words.Length == 0)
             return -1;
@@ -641,6 +647,9 @@ public static class SqlTokenizer
     {
         if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(word) || index < 0 || index >= text.Length)
             return false;
+
+        if (word.IndexOf(' ') < 0)
+            return MatchesSingleWordAt(text, index, word);
 
         var words = word.Split([' '], StringSplitOptions.RemoveEmptyEntries);
         if (words.Length == 0)
@@ -717,6 +726,32 @@ public static class SqlTokenizer
         if (i >= text.Length)
             return null;
 
+        // Fast path: plain unquoted identifier (possibly schema-qualified).
+        if (text[i] != '"')
+        {
+            var startIdx = i;
+            while (i < text.Length)
+            {
+                var c = text[i];
+                if (char.IsLetterOrDigit(c) || c == '_' || c == '$' || c == '.')
+                {
+                    i++;
+                    continue;
+                }
+
+                break;
+            }
+
+            if (i > startIdx)
+            {
+                after = i;
+                var raw = text[startIdx..i];
+                return unquote ? UnquoteQualified(raw) : raw;
+            }
+
+            return null;
+        }
+
         var sb = new StringBuilder();
         while (i < text.Length)
         {
@@ -780,6 +815,9 @@ public static class SqlTokenizer
 
     private static string UnquoteQualified(string raw)
     {
+        if (raw.IndexOf('"') < 0)
+            return raw;
+
         var parts = SplitTopLevel(raw, '.');
         var result = new StringBuilder(raw.Length);
         var first = true;
@@ -806,5 +844,73 @@ public static class SqlTokenizer
             return true;
 
         return !IsWordChar(text[index - 1]);
+    }
+
+    private static int IndexOfSingleWord(string text, string word, int start, out int matchedLength)
+    {
+        matchedLength = 0;
+        var i = start;
+
+        while (i <= text.Length - word.Length)
+        {
+            var found = text.IndexOf(word, i, StringComparison.OrdinalIgnoreCase);
+            if (found < 0)
+                return -1;
+
+            if (!IsWordBoundaryBefore(text, found))
+            {
+                i = found + 1;
+                continue;
+            }
+
+            var pos = found + word.Length;
+            if (pos >= text.Length || !IsWordChar(text[pos]))
+            {
+                matchedLength = word.Length;
+                return found;
+            }
+
+            i = found + 1;
+        }
+
+        return -1;
+    }
+
+    private static bool MatchesSingleWordAt(string text, int index, string word)
+    {
+        if (index + word.Length > text.Length)
+            return false;
+
+        if (!IsWordBoundaryBefore(text, index))
+            return false;
+
+        if (!text.AsSpan(index, word.Length).Equals(word, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var pos = index + word.Length;
+        if (pos < text.Length && IsWordChar(text[pos]))
+            return false;
+
+        return true;
+    }
+
+    private static int LastIndexOfSingleWord(string text, string word, int start)
+    {
+        var searchEnd = text.Length - word.Length;
+        var i = start >= 0 && start <= searchEnd ? start : searchEnd;
+
+        while (i >= 0)
+        {
+            var found = text.LastIndexOf(word, i, StringComparison.OrdinalIgnoreCase);
+            if (found < 0)
+                return -1;
+
+            if (MatchesSingleWordAt(text, found, word))
+                return found;
+
+            i = found - 1;
+        }
+
+        return -1;
     }
 }

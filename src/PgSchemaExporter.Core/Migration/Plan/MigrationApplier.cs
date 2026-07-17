@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using PgSchemaExporter.Core.Diagnostics;
+using PgSchemaExporter.Core.Scripting;
 
 namespace PgSchemaExporter.Core.Migration.Plan;
 
@@ -29,6 +30,9 @@ public sealed class MigrationApplier
 
         /// <summary>Print statements without executing them.</summary>
         public bool DryRun { get; init; }
+
+        /// <summary>Maximum seconds to wait for a single statement before cancelling it. Zero disables the timeout.</summary>
+        public int CommandTimeoutSeconds { get; init; }
     }
 
     public async Task<ApplyResult> ApplyAsync(
@@ -91,7 +95,7 @@ public sealed class MigrationApplier
             foreach (var statement in concurrent)
             {
                 progress.Step($"Applying (concurrent): {FirstLine(statement.Sql)}");
-                await ExecuteAsync(connection, plan.Settings, statement.Sql, cancellationToken);
+                await ExecuteAsync(connection, plan.Settings, statement.Sql, cancellationToken, options.CommandTimeoutSeconds);
                 executed++;
             }
         }
@@ -104,12 +108,12 @@ public sealed class MigrationApplier
             await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
             try
             {
-                await ApplySessionSettingsAsync(connection, transaction, plan.Settings, cancellationToken);
+                await ApplySessionSettingsAsync(connection, transaction, plan.Settings, cancellationToken, options.CommandTimeoutSeconds);
 
                 foreach (var statement in transactional)
                 {
                     progress.Step($"Applying: {FirstLine(statement.Sql)}");
-                    await ExecuteAsync(connection, statement.Sql, transaction, cancellationToken);
+                    await ExecuteAsync(connection, statement.Sql, transaction, cancellationToken, options.CommandTimeoutSeconds);
                     executed++;
                 }
 
@@ -141,35 +145,41 @@ public sealed class MigrationApplier
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         MigrationPlanSettings settings,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds = 0)
     {
         if (!string.IsNullOrWhiteSpace(settings.LockTimeout))
-            await ExecuteAsync(connection, $"SET LOCAL lock_timeout = '{settings.LockTimeout}'", transaction, cancellationToken);
+            await ExecuteAsync(connection, $"SET LOCAL lock_timeout = {SqlLiteral.String(settings.LockTimeout)}", transaction, cancellationToken, commandTimeoutSeconds);
 
         if (!string.IsNullOrWhiteSpace(settings.StatementTimeout))
-            await ExecuteAsync(connection, $"SET LOCAL statement_timeout = '{settings.StatementTimeout}'", transaction, cancellationToken);
+            await ExecuteAsync(connection, $"SET LOCAL statement_timeout = {SqlLiteral.String(settings.StatementTimeout)}", transaction, cancellationToken, commandTimeoutSeconds);
     }
 
     private static async Task ExecuteAsync(
         NpgsqlConnection connection,
         MigrationPlanSettings settings,
         string sql,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds = 0)
     {
         // Concurrent statements run with autocommit; apply session-level timeouts first.
         if (!string.IsNullOrWhiteSpace(settings.LockTimeout))
-            await ExecuteAsync(connection, $"SET lock_timeout = '{settings.LockTimeout}'", null, cancellationToken);
+            await ExecuteAsync(connection, $"SET lock_timeout = {SqlLiteral.String(settings.LockTimeout)}", null, cancellationToken, commandTimeoutSeconds);
 
-        await ExecuteAsync(connection, sql, null, cancellationToken);
+        await ExecuteAsync(connection, sql, null, cancellationToken, commandTimeoutSeconds);
     }
 
     private static async Task ExecuteAsync(
         NpgsqlConnection connection,
         string sql,
         NpgsqlTransaction? transaction,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? commandTimeout = null)
     {
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        await using var command = new NpgsqlCommand(sql, connection, transaction)
+        {
+            CommandTimeout = commandTimeout ?? 0
+        };
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 
 namespace PgSchemaExporter.Core.Migration;
@@ -38,13 +39,36 @@ public static class MigrationHistory
         Directory.CreateDirectory(outputDirectory);
         var path = Path.Combine(outputDirectory, DefaultFileName);
 
-        var history = await ReadAsync(path, cancellationToken);
-        var entries = history.Migrations.ToList();
-        entries.Add(entry);
+        await using var stream = new FileStream(
+            path,
+            FileMode.OpenOrCreate,
+            FileAccess.ReadWrite,
+            FileShare.None,
+            4096,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
 
-        var updated = new MigrationHistoryFile { Migrations = entries };
-        var json = JsonSerializer.Serialize(updated, Serialization.PgSchemaExporterJsonContext.Default.MigrationHistoryFile);
-        await File.WriteAllTextAsync(path, json, cancellationToken);
+        using (var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 4096, leaveOpen: true))
+        {
+            var json = await reader.ReadToEndAsync(cancellationToken);
+            var history = string.IsNullOrWhiteSpace(json)
+                ? new MigrationHistoryFile()
+                : JsonSerializer.Deserialize(json, Serialization.PgSchemaExporterJsonContext.Default.MigrationHistoryFile)
+                    ?? new MigrationHistoryFile();
+
+            var entries = history.Migrations.ToList();
+            entries.Add(entry);
+            var updated = new MigrationHistoryFile { Migrations = entries };
+            var newJson = JsonSerializer.Serialize(updated, Serialization.PgSchemaExporterJsonContext.Default.MigrationHistoryFile);
+
+            stream.Position = 0;
+            stream.SetLength(0);
+
+            await using (var writer = new StreamWriter(stream, Encoding.UTF8, leaveOpen: true))
+            {
+                await writer.WriteAsync(newJson);
+                await writer.FlushAsync();
+            }
+        }
     }
 }
 

@@ -1,4 +1,5 @@
 using System.Text;
+using PgSchemaExporter.Core.Scripting;
 
 namespace PgSchemaExporter.Core.Migration;
 
@@ -94,13 +95,13 @@ public sealed class MigrationScript
 
         if (!string.IsNullOrWhiteSpace(options.LockTimeout))
         {
-            sb.AppendLine($"SET lock_timeout = '{options.LockTimeout}';");
+            sb.AppendLine($"SET lock_timeout = {SqlLiteral.String(options.LockTimeout)};");
             wrote = true;
         }
 
         if (!string.IsNullOrWhiteSpace(options.StatementTimeout))
         {
-            sb.AppendLine($"SET statement_timeout = '{options.StatementTimeout}';");
+            sb.AppendLine($"SET statement_timeout = {SqlLiteral.String(options.StatementTimeout)};");
             wrote = true;
         }
 

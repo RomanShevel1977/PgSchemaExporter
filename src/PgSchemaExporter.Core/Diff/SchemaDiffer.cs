@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using PgSchemaExporter.Core.Diagnostics;
@@ -94,9 +95,9 @@ public sealed class SchemaDiffer
 
         var added = new List<string>();
         var removed = new List<string>();
-        var changed = new List<string>();
-        var unchanged = new List<string>();
-        var fileDiffs = new List<FileDiff>();
+        var changed = new ConcurrentBag<string>();
+        var unchanged = new ConcurrentBag<string>();
+        var fileDiffs = new ConcurrentBag<FileDiff>();
 
         var common = new List<string>();
         foreach (var relativePath in right.Keys)
@@ -128,21 +129,17 @@ public sealed class SchemaDiffer
 
             if (leftLines.SequenceEqual(rightLines))
             {
-                lock (unchanged)
-                    unchanged.Add(relativePath);
+                unchanged.Add(relativePath);
             }
             else
             {
-                lock (changed)
-                {
-                    changed.Add(relativePath);
-                    if (options.ShowContext)
-                        fileDiffs.Add(new FileDiff
-                        {
-                            Path = relativePath,
-                            Lines = LineDiffer.Diff(leftLines, rightLines)
-                        });
-                }
+                changed.Add(relativePath);
+                if (options.ShowContext)
+                    fileDiffs.Add(new FileDiff
+                    {
+                        Path = relativePath,
+                        Lines = LineDiffer.Diff(leftLines, rightLines)
+                    });
             }
         });
 
@@ -158,9 +155,9 @@ public sealed class SchemaDiffer
     }
 
     private static IReadOnlyList<DiffTypeStat> BuildStatistics(
-        List<string> added,
-        List<string> removed,
-        List<string> changed)
+        IEnumerable<string> added,
+        IEnumerable<string> removed,
+        IEnumerable<string> changed)
     {
         var types = new SortedDictionary<string, (int Added, int Removed, int Changed)>(StringComparer.OrdinalIgnoreCase);
 
@@ -342,9 +339,10 @@ public sealed class SchemaDiffer
         return sb.ToString();
     }
 
-    private static IReadOnlyList<string> Sorted(List<string> items)
+    private static IReadOnlyList<string> Sorted(IEnumerable<string> items)
     {
-        items.Sort(StringComparer.OrdinalIgnoreCase);
-        return items;
+        var list = items.ToList();
+        list.Sort(StringComparer.OrdinalIgnoreCase);
+        return list;
     }
 }

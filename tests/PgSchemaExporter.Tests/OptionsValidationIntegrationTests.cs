@@ -22,7 +22,7 @@ public class OptionsValidationIntegrationTests
 
         options.EnsureValidForExport();
 
-        Assert.Equal(["PUBLIC", "app"], options.Schemas);
+        Assert.Equal(["PUBLIC", "app"], options.EffectiveSchemas);
     }
 
     [Fact]

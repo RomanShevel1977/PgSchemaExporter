@@ -1,3 +1,5 @@
+using PgSchemaExporter.Core.Scripting;
+
 namespace PgSchemaExporter.Core.Migration;
 
 /// <summary>
@@ -25,7 +27,11 @@ public sealed class ParsedColumn
 /// </summary>
 public sealed class ParsedTable
 {
-    public required string QualifiedName { get; init; }
+    public required string Schema { get; init; }
+    public required string Name { get; init; }
+    public string QualifiedName => string.IsNullOrEmpty(Schema)
+        ? SqlIdentifier.Quote(Name)
+        : SqlIdentifier.Qualified(Schema, Name);
     public required IReadOnlyList<ParsedColumn> Columns { get; init; }
     public bool IsParseable { get; init; } = true;
 }

@@ -4,6 +4,7 @@ using PgSchemaExporter.Core.Diff;
 using PgSchemaExporter.Core.Integrity;
 using PgSchemaExporter.Core.Migration;
 using PgSchemaExporter.Core.Migration.Plan;
+using PgSchemaExporter.Core.Options;
 
 namespace PgSchemaExporter.Core.Serialization;
 
@@ -15,6 +16,9 @@ namespace PgSchemaExporter.Core.Serialization;
     WriteIndented = true,
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[JsonSerializable(typeof(ExportOptions))]
+[JsonSerializable(typeof(IncludeOptions))]
+[JsonSerializable(typeof(FormatOptions))]
 [JsonSerializable(typeof(MigrationPlan))]
 [JsonSerializable(typeof(MigrationPlanSettings))]
 [JsonSerializable(typeof(PlanStatement))]

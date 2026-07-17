@@ -21,13 +21,25 @@ public sealed class DumpSplitter
         DumpSplitFileWriter fileWriter,
         DeployScriptWriter deployScriptWriter,
         ReadmeWriter readmeWriter)
+        : this(statementSplitter, classifier, fileWriter, deployScriptWriter, readmeWriter, new DependencyManifestWriter(), new DeploymentPlanBuilder())
+    {
+    }
+
+    public DumpSplitter(
+        SqlStatementSplitter statementSplitter,
+        PgDumpObjectClassifier classifier,
+        DumpSplitFileWriter fileWriter,
+        DeployScriptWriter deployScriptWriter,
+        ReadmeWriter readmeWriter,
+        DependencyManifestWriter dependencyManifestWriter,
+        DeploymentPlanBuilder deploymentPlanBuilder)
     {
         _statementSplitter = statementSplitter;
         _classifier = classifier;
         _fileWriter = fileWriter;
         _deployScriptWriter = deployScriptWriter;
-        _dependencyManifestWriter = new DependencyManifestWriter();
-        _deploymentPlanBuilder = new DeploymentPlanBuilder();
+        _dependencyManifestWriter = dependencyManifestWriter;
+        _deploymentPlanBuilder = deploymentPlanBuilder;
         _readmeWriter = readmeWriter;
     }
 
@@ -40,7 +52,13 @@ public sealed class DumpSplitter
 
         Directory.CreateDirectory(options.OutputDirectory);
 
-        var sql = await File.ReadAllTextAsync(options.InputFile, cancellationToken);
+        string sql;
+        await using (var stream = File.OpenRead(options.InputFile))
+        using (var reader = new StreamReader(stream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+        {
+            sql = await reader.ReadToEndAsync(cancellationToken);
+        }
+
         var statements = _statementSplitter.Split(sql, cache: false);
 
         var objects = statements

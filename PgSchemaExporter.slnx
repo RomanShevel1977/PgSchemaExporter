@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PgSchemaExporter.Cli/PgSchemaExporter.Cli.csproj" />
+    <Project Path="src/PgSchemaExporter.Core/PgSchemaExporter.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PgSchemaExporter.Benchmarks/PgSchemaExporter.Benchmarks.csproj" />
+    <Project Path="tests/PgSchemaExporter.Tests/PgSchemaExporter.Tests.csproj" />
+  </Folder>
+</Solution>
