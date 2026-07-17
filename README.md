@@ -14,6 +14,7 @@ Git-native PostgreSQL schema exporter and `pg_dump` splitter.
 - [Why](#why)
 - [Quick Start](#quick-start)
 - [Features](#features)
+- [Alternatives](#alternatives)
 - [Supported PostgreSQL objects](#supported-postgresql-objects)
 - [Install](#install)
 - [Usage](#usage)
@@ -136,6 +137,46 @@ See [USAGE_GUIDE.md](doc/USAGE_GUIDE.md) for the complete command reference.
   - `init` scaffolds a validated `pgschema-export.json` config file.
   - `--verbose` / `--quiet` and structured logging control output noise.
   - Progress reporting for long operations and `--profile` per-phase timing summary for performance tuning.
+
+---
+
+## Alternatives
+
+PgSchemaExporter is not the only tool that works with PostgreSQL schemas. Below is a comparison of common alternatives grouped by what they do best.
+
+### Schema export & diff
+
+| Tool | Export | Dir-vs-dir diff | Live DB diff | Up/down migration | Git-native layout |
+|------|--------|-----------------|--------------|-------------------|-------------------|
+| **pgschema-export** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `pg_dump --schema-only` | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `migra` | ⚠️ via live DB | ❌ | ✅ | ✅ (single direction) | ❌ |
+| `apgdiff` | ❌ | ❌ | ❌ | ✅ | ❌ |
+| pgAdmin Schema Diff | ❌ | ❌ | ✅ | ❌ | ❌ |
+| `SchemaCrawler` | ✅ | ❌ | ❌ | ❌ | ❌ |
+
+### Migration / schema-as-code management
+
+| Tool | State-based migrations | Versioned migrations | Rollback | CI exit codes | PostgreSQL-first |
+|------|------------------------|----------------------|----------|---------------|------------------|
+| **pgschema-export** | ✅ | ✅ (`migrate` + `plan`) | ✅ (`down` scripts) | ✅ (0/1/2) | ✅ |
+| **Flyway** | ❌ | ✅ | ✅ | ✅ | ⚠️ multi-DB |
+| **Liquibase** | ❌ | ✅ | ✅ | ✅ | ⚠️ multi-DB |
+| **Sqitch** | ❌ | ✅ | ✅ | ✅ | ✅ |
+| **Atlas** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **pgroll** | ✅ | ❌ | ✅ | ✅ | ✅ |
+
+### Why pgschema-export?
+
+- **One file per object** — small, reviewable diffs in Git.
+- **Export anywhere** — from a live DB or from an existing `pg_dump` file.
+- **Diff anywhere** — directory↔directory, directory↔live, live↔live.
+- **Reviewable plan/apply workflow** — generate a JSON plan, inspect hazards, apply with `--dry-run` or `--rollback`.
+- **Built-in guardrails** — `--safe`, `--online-ddl`, `--lock-timeout`, `--statement-timeout`, and hazard analysis.
+- **Fingerprint + drift detection** — prove that production still matches the committed schema.
+- **Diagrams** — Mermaid/Graphviz output for documentation or architecture reviews.
+
+If you need a pure state-based, PostgreSQL-first workflow that lives naturally in Git, `pgschema-export` is a strong fit. If you already use Flyway/Liquibase migrations, `pgschema-export` can generate starting `up`/`down` scripts and `plan` files to bridge the two workflows.
 
 ---
 
