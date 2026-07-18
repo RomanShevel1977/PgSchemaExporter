@@ -1,17 +1,21 @@
 name: PostgreSQL Schema Drift
 
-# Detects whether the live database has drifted away from the schema committed
-# to db-schema/. Runs the built-in `drift` command, which exits with code 2 when
-# drift is found so the job fails automatically.
+# Self-test CI for the `drift` and `fingerprint` commands.
+# Seeds a test Postgres database, exports it, then verifies that:
+#   1. The exported schema directory matches its own fingerprint.
+#   2. `drift --schema ./db-schema` against the same database reports no drift.
+# The `drift` command exits with code 2 when drift is found, so a real mismatch
+# will still fail the job automatically.
 
 on:
   schedule:
-    - cron: '0 6 * * *'   # daily drift check
+    - cron: '0 6 * * *'   # daily self-test
   workflow_dispatch:
   pull_request:
     paths:
-      - 'db-schema/**'
       - '.github/workflows/schema-drift.yml'
+      - 'samples/sample-schema.sql'
+      - 'src/**'
 
 jobs:
   drift:
@@ -41,24 +45,48 @@ jobs:
         with:
           dotnet-version: '8.0'
 
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+
+      - name: Seed test database
+        env:
+          PGPASSWORD: postgres
+        run: |
+          until pg_isready -h localhost -U postgres -q; do sleep 1; done
+          psql -h localhost -U postgres -d testdb -v ON_ERROR_STOP=1 -f samples/sample-schema.sql
+
       - name: Build tool
         run: dotnet build src/PgSchemaExporter.Cli/PgSchemaExporter.Cli.csproj -c Release
 
-      - name: Verify committed schema fingerprint
+      - name: Export schema from test database
         run: |
-          dotnet run --project src/PgSchemaExporter.Cli/PgSchemaExporter.Cli.csproj \
+          dotnet run -c Release --project src/PgSchemaExporter.Cli/PgSchemaExporter.Cli.csproj \
+            export \
+            --connection "Host=localhost;Database=testdb;Username=postgres;Password=postgres" \
+            --schemas app \
+            --output ./db-schema
+
+      - name: Verify schema fingerprint
+        run: |
+          dotnet run -c Release --project src/PgSchemaExporter.Cli/PgSchemaExporter.Cli.csproj \
+            fingerprint \
+            --schema ./db-schema \
+            --output ./db-schema/schema.fingerprint.json
+          dotnet run -c Release --project src/PgSchemaExporter.Cli/PgSchemaExporter.Cli.csproj \
             fingerprint \
             --schema ./db-schema \
             --verify ./db-schema/schema.fingerprint.json
-        continue-on-error: true
 
       - name: Detect drift against live database
         id: drift
         run: |
-          dotnet run --project src/PgSchemaExporter.Cli/PgSchemaExporter.Cli.csproj \
+          dotnet run -c Release --project src/PgSchemaExporter.Cli/PgSchemaExporter.Cli.csproj \
             drift \
             --schema ./db-schema \
             --connection "Host=localhost;Database=testdb;Username=postgres;Password=postgres" \
+            --schemas app \
             --format json \
             --output drift-report.json
 
