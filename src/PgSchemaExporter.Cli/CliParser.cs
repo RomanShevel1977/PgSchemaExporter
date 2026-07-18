@@ -13,6 +13,7 @@ public sealed class ApplyArgs
     public bool Rollback { get; set; }
     public bool DryRun { get; set; }
     public bool AssumeYes { get; set; }
+    public bool Resume { get; set; }
 }
 
 public static class CliParser
@@ -131,6 +132,10 @@ public static class CliParser
                 case "--yes":
                 case "-y":
                     result.AssumeYes = true;
+                    break;
+
+                case "--resume":
+                    result.Resume = true;
                     break;
 
                 default:

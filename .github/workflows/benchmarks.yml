@@ -55,7 +55,20 @@ jobs:
         if: github.event_name == 'pull_request'
         shell: pwsh
         run: |
-          ./scripts/Compare-Benchmarks.ps1 -BaselineDir "baseline/BenchmarkDotNet.Artifacts/results" -CurrentDir "BenchmarkDotNet.Artifacts/results" -OutputPath "benchmark-comparison.md"
+          ./scripts/Compare-Benchmarks.ps1 `
+            -BaselineDir "baseline/BenchmarkDotNet.Artifacts/results" `
+            -CurrentDir "BenchmarkDotNet.Artifacts/results" `
+            -OutputPath "benchmark-comparison.md" `
+            -MaxMeanRegression 1.10 `
+            -MaxAllocatedRegression 1.20
+
+      - name: Publish benchmark comparison summary
+        if: github.event_name == 'pull_request' && always()
+        shell: pwsh
+        run: |
+          if (Test-Path benchmark-comparison.md) {
+            Get-Content benchmark-comparison.md -Raw | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
@@ -66,3 +79,4 @@ jobs:
             BenchmarkDotNet.Artifacts/results/*.md
             BenchmarkDotNet.Artifacts/results/*.csv
             BenchmarkDotNet.Artifacts/results/*.html
+            benchmark-comparison.md

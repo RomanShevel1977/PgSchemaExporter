@@ -58,10 +58,10 @@ public static class SqlDropBuilder
 
     private static string? BuildViewDrop(string sql)
     {
-        if (SqlTokenizer.ContainsWord(sql, "MATERIALIZED"))
-            return Wrap("DROP MATERIALIZED VIEW IF EXISTS", NameAfter(sql, "VIEW"), " CASCADE");
-
-        return Wrap("DROP VIEW IF EXISTS", NameAfter(sql, "VIEW"), " CASCADE");
+        var materialized = SqlTokenizer.FindKeyword(sql, "MATERIALIZED") >= 0;
+        return materialized
+            ? Wrap("DROP MATERIALIZED VIEW IF EXISTS", NameAfter(sql, "VIEW"), " CASCADE")
+            : Wrap("DROP VIEW IF EXISTS", NameAfter(sql, "VIEW"), " CASCADE");
     }
 
     private static string? BuildIndexDrop(string sql)
@@ -118,11 +118,12 @@ public static class SqlDropBuilder
     private static string? BuildFunctionDrop(string sql)
     {
         // CREATE [OR REPLACE] FUNCTION <schema>.<name>(<args>) RETURNS ...
-        var start = SqlTokenizer.IndexAfterWord(sql, "FUNCTION");
-        if (start < 0)
+        var tokens = SqlTokenizer.Tokenize(sql);
+        var afterName = SqlTokenizer.ReadNameAfter(tokens, "FUNCTION", out var name);
+        if (name is null)
             return null;
 
-        var open = sql.IndexOf('(', start);
+        var open = sql.IndexOf('(', afterName);
         if (open < 0)
             return null;
 
@@ -130,7 +131,6 @@ public static class SqlDropBuilder
         if (close < 0)
             return null;
 
-        var name = sql[start..open].Trim();
         var args = sql[(open + 1)..close].Trim();
         var signature = StripArgumentDefaults(args);
 
@@ -140,48 +140,45 @@ public static class SqlDropBuilder
     private static string? BuildCommentReset(string sql)
     {
         // COMMENT ON <type> <name> IS '...'  ->  COMMENT ON <type> <name> IS NULL;
-        var isIndex = SqlTokenizer.LastIndexOfWord(sql, "IS");
-        if (isIndex < 0)
+        var tokens = SqlTokenizer.Tokenize(sql);
+        var isTokenIndex = SqlTokenizer.FindKeyword(tokens, "IS");
+        if (isTokenIndex < 0)
             return null;
 
-        return sql[..isIndex].TrimEnd() + " IS NULL;";
+        var isToken = tokens[isTokenIndex];
+        return sql[..isToken.Start].TrimEnd() + " IS NULL;";
     }
 
     private static string? BuildGrantRevoke(string sql)
     {
         var trimmed = sql.TrimEnd(';').Trim();
-        if (!SqlTokenizer.StartsWithWord(trimmed, "GRANT"))
+        var tokens = SqlTokenizer.Tokenize(trimmed);
+        var grantTokenIndex = SqlTokenizer.FindKeyword(tokens, "GRANT");
+        if (grantTokenIndex < 0)
             return null;
 
         // GRANT <privs> ON <obj> TO <roles> [WITH GRANT OPTION]
-        var toIndex = SqlTokenizer.LastIndexOfWord(trimmed, "TO");
-        if (toIndex < 0)
+        var toTokenIndex = SqlTokenizer.FindKeyword(tokens, "TO");
+        if (toTokenIndex < 0)
             return null;
 
-        var head = trimmed["GRANT".Length..toIndex];
-        var roles = trimmed[(toIndex + "TO".Length)..].Trim();
-        var grantOptionIndex = SqlTokenizer.IndexOfWord(roles, "WITH GRANT OPTION");
-        if (grantOptionIndex >= 0)
-            roles = roles[..grantOptionIndex].Trim();
+        var grantToken = tokens[grantTokenIndex];
+        var toToken = tokens[toTokenIndex];
+        var withGrantOptionIndex = SqlTokenizer.FindKeyword(tokens, "WITH GRANT OPTION");
 
-        return $"REVOKE{head}FROM {roles};";
+        var head = trimmed[(grantToken.Start + grantToken.Length)..toToken.Start].Trim();
+        var rolesEnd = withGrantOptionIndex >= 0 ? tokens[withGrantOptionIndex].Start : trimmed.Length;
+        var roles = trimmed[(toToken.Start + toToken.Length)..rolesEnd].Trim();
+
+        return $"REVOKE {head} FROM {roles};";
     }
 
     /// <summary>
     /// Extracts the identifier (possibly schema-qualified and/or quoted) that follows a
-    /// given keyword, skipping a leading "IF NOT EXISTS", "ONLY", or "OR REPLACE".
+    /// given keyword using the shared token-level SQL tokenizer.
     /// </summary>
     private static string? NameAfter(string sql, string keyword)
-    {
-        var index = SqlTokenizer.IndexAfterWord(sql, keyword);
-        if (index < 0)
-            return null;
-
-        var span = sql[index..];
-        span = SqlTokenizer.SkipLeadingNoise(span);
-
-        return SqlTokenizer.ReadIdentifier(span);
-    }
+        => SqlTokenizer.ReadNameAfter(sql, keyword);
 
 
     private static string StripArgumentDefaults(string args)

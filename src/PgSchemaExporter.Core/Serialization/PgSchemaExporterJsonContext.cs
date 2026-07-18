@@ -15,7 +15,10 @@ namespace PgSchemaExporter.Core.Serialization;
 [JsonSourceGenerationOptions(
     WriteIndented = true,
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
-    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    PropertyNameCaseInsensitive = true,
+    AllowTrailingCommas = true,
+    ReadCommentHandling = JsonCommentHandling.Skip)]
 [JsonSerializable(typeof(ExportOptions))]
 [JsonSerializable(typeof(IncludeOptions))]
 [JsonSerializable(typeof(FormatOptions))]

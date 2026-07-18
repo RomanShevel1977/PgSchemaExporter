@@ -107,7 +107,9 @@ See [USAGE_GUIDE.md](doc/USAGE_GUIDE.md) for the complete command reference.
 - **Plan / Apply** — Terraform-style workflow for reviewable, predictable deployments.
   - `plan` writes a JSON or human-readable plan that captures up/down statements, render settings, and a hazard analysis; exits `2` when changes are pending.
   - `apply` runs transactional statements inside a single transaction and concurrent index statements outside it.
-  - Supports `--dry-run`, `--rollback`, `--yes`, and `--safe` modes.
+  - `apply --resume` safely skips statements already recorded in the migration journal and continues a partial or retried run.
+  - Migration journal records every applied statement in `pgschema_migration_journal` (name configurable with `--journal-table`) for auditable recovery.
+  - Supports `--dry-run`, `--rollback`, `--yes`, `--safe`, and `--resume` modes.
 
 - **Production-safe migrations** — reduce downtime and risk when applying changes.
   - `--online-ddl` rewrites `CREATE`/`DROP INDEX` to `CONCURRENTLY` forms emitted outside the transaction.
@@ -132,6 +134,7 @@ See [USAGE_GUIDE.md](doc/USAGE_GUIDE.md) for the complete command reference.
 - **CI/CD** — designed to be used in pipelines.
   - Machine-readable JSON output and meaningful exit codes (`0` success / no diff, `1` error, `2` differences / drift).
   - Ready-to-use GitHub Actions for benchmark runs and drift checks.
+  - Benchmark baselines and automated regression detection in CI compare PR results against `main`.
   - Profiling scripts for `dotnet-trace` and `dotnet-counters` help diagnose real-world performance.
 
 - **DX** — command-line experience focused on clarity and safety.
@@ -237,6 +240,23 @@ Run it:
 ```bash
 ./src/PgSchemaExporter.Cli/bin/Release/net8.0/PgSchemaExporter.Cli --help
 ```
+
+### Install as a .NET global tool
+
+```bash
+dotnet tool install -g PgSchemaExporter.Cli
+pgschema-export --help
+```
+
+For local tools (per repo):
+
+```bash
+dotnet new tool-manifest
+dotnet tool install --local PgSchemaExporter.Cli
+dotnet pgschema-export --help
+```
+
+### Build from source (standalone executable)
 
 For convenience, copy or rename the produced binary to `pgschema-export` / `pgschema-export.exe` and add it to your `PATH`.
 
@@ -485,7 +505,18 @@ See [Performance Refactoring Report](doc/Performance_Refactoring_Report_Full.md)
 
 ## Roadmap
 
-v2.0.0 is now released. It delivers the prioritized recommendations from `ASSESSMENT_REPORT.md` and the CLI `ICommand` architecture refactor.
+v2.1.0 is now released. It builds on the v2.0.0 architecture refactor and focuses on parser correctness, CI regression detection, migration safety, and packaging.
+
+### Completed in v2.1.0
+
+- Token-level SQL parser unification (`SqlTokenizer` API, `TableDefinitionParser`, `ConstraintDefinitionParser`, `SqlDropBuilder`).
+- Unit tests for the tokenizer and migrated parsers without Docker/Testcontainers.
+- Migration journal and `apply --resume` for safe, idempotent production deployments.
+- Thread-safe `ConsoleProgressReporter` for `--parallel` operations.
+- Benchmark baselines and regression detection in CI.
+- .NET global tool packaging (`dotnet tool install -g PgSchemaExporter.Cli`).
+- Source-generated JSON serialization for `ExportConfigLoader`/`ExportConfigWriter`.
+- `PolicyDefFunctionExistsCache` invalidation/staleness fixes.
 
 ### Completed in v2.0.0
 
@@ -501,12 +532,14 @@ v2.0.0 is now released. It delivers the prioritized recommendations from `ASSESS
 - Full integration and unit test coverage (475 tests)
 - Solution file (`PgSchemaExporter.slnx`) and unified `2.0.0` version
 
-### Next steps
+### Next steps (v2.2.0+)
 
-- Full token-level SQL parsing unification across the splitter and migration generator.
-- Benchmark baselines in CI with automated regression detection.
+- Streaming archive output (`export --output schema.tar.gz`).
+- Partitioned tables, table inheritance, and FDW/foreign-table support.
+- Schema glob patterns for `--schemas` / `--exclude-schemas`.
+- JSON manifest export (`export --format json`) for downstream tooling.
+- Hazard-aware auto-`--safe` in CI and rollback verification.
 - Continued live-schema / metadata-query performance tuning.
-- Optional pluggable output backends (e.g., JSON manifest, streaming archive).
 
 <details>
 <summary>Full release history</summary>
@@ -527,11 +560,12 @@ v2.0.0 is now released. It delivers the prioritized recommendations from `ASSESS
 * v1.7.0  Safety & CI/CD — drift detection, schema fingerprint validation, migration history tracking, GitHub Action drift workflow
 * v1.8.0  Production Features — declarative plan/apply workflow, online DDL (concurrent indexes), hazard warnings, lock/statement timeout configuration
 * v1.9.0  Developer Experience — ER-diagram visualization (Mermaid/Graphviz DOT), performance profiling, `--profile` flag
+* v2.1.0  Correctness & Operability — token-level SQL parser unification, migration journal + `--resume`, benchmark baselines + regression detection in CI, .NET global tool, source-gen config, thread-safe progress, cache invalidation fixes
 * v2.0.0  Architecture & Prioritized Recommendations — CLI `ICommand` refactor, atomic migration history, source-generated JSON serializers, benchmark suite, full integration tests, SQL escaping/parameterization
 
 </details>
 
-Latest changes: [RELEASE_NOTES_2.0.0.md](RELEASE_NOTES_2.0.0.md).
+Latest changes: [RELEASE_NOTES_2.1.0.md](RELEASE_NOTES_2.1.0.md).
 
 ---
 

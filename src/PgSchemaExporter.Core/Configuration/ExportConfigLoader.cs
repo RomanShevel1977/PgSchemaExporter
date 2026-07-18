@@ -24,15 +24,7 @@ public static class ExportConfigLoader
         ExportOptions? options;
         try
         {
-            var serializerOptions = new JsonSerializerOptions(PgSchemaExporterJsonContext.Default.Options)
-            {
-                PropertyNameCaseInsensitive = true,
-                ReadCommentHandling = JsonCommentHandling.Skip,
-                AllowTrailingCommas = true,
-                TypeInfoResolver = PgSchemaExporterJsonContext.Default
-            };
-
-            options = JsonSerializer.Deserialize<ExportOptions>(json, serializerOptions);
+            options = JsonSerializer.Deserialize<ExportOptions>(json, PgSchemaExporterJsonContext.Default.Options);
         }
         catch (JsonException ex)
         {

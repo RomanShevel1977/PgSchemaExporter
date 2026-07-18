@@ -11,7 +11,7 @@ public sealed class ConsoleProgressReporter : IProgressReporter
 {
     private readonly Verbosity _verbosity;
     private int _completed;
-    private int? _total;
+    private int _total = -1; // -1 means "no total provided"
 
     public ConsoleProgressReporter(Verbosity verbosity)
     {
@@ -21,7 +21,7 @@ public sealed class ConsoleProgressReporter : IProgressReporter
     public void Start(string operation, int? totalSteps = null)
     {
         _completed = 0;
-        _total = totalSteps;
+        Volatile.Write(ref _total, totalSteps ?? -1);
 
         if (_verbosity >= Verbosity.Normal)
             Console.Error.WriteLine($"==> {operation}...");
@@ -29,12 +29,13 @@ public sealed class ConsoleProgressReporter : IProgressReporter
 
     public void Step(string message)
     {
-        _completed++;
+        var completed = Interlocked.Increment(ref _completed);
 
         if (_verbosity < Verbosity.Verbose)
             return;
 
-        var counter = _total is > 0 ? $"[{_completed}/{_total}] " : string.Empty;
+        var total = Volatile.Read(ref _total);
+        var counter = total > 0 ? $"[{completed}/{total}] " : string.Empty;
         Console.Error.WriteLine($"    {counter}{message}");
     }
 

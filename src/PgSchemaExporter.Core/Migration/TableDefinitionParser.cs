@@ -20,28 +20,23 @@ public static class TableDefinitionParser
         if (string.IsNullOrWhiteSpace(sql))
             return null;
 
-        var createIndex = sql.IndexOf("CREATE", StringComparison.OrdinalIgnoreCase);
+        var tokens = SqlTokenizer.Tokenize(sql);
+
+        var createIndex = SqlTokenizer.FindKeyword(tokens, "CREATE");
         if (createIndex < 0)
             return null;
 
-        // Locate the " TABLE " keyword and the qualified name that follows it.
-        var tableKeyword = IndexOfWord(sql, "TABLE", createIndex);
+        // Locate the "TABLE" keyword and the qualified name that follows it.
+        var tableKeyword = SqlTokenizer.FindKeyword(tokens, "TABLE", createIndex);
         if (tableKeyword < 0)
             return null;
 
-        var afterTable = tableKeyword + "TABLE".Length;
-
-        // Skip an optional "IF NOT EXISTS".
-        var ifNotExists = IndexOfWord(sql, "IF NOT EXISTS", afterTable);
-        if (ifNotExists >= 0 && ifNotExists <= afterTable + 2)
-            afterTable = ifNotExists + "IF NOT EXISTS".Length;
-
-        var openParen = sql.IndexOf('(', afterTable);
-        if (openParen < 0)
+        var afterName = SqlTokenizer.ReadNameAfter(tokens, "TABLE", out var qualifiedName);
+        if (qualifiedName is null)
             return null;
 
-        var qualifiedName = SkipLeadingNoise(sql[afterTable..openParen].Trim());
-        if (qualifiedName.Length == 0)
+        var openParen = sql.IndexOf('(', afterName);
+        if (openParen < 0)
             return null;
 
         var (schema, name) = SplitQualifiedName(qualifiedName);
@@ -67,9 +62,6 @@ public static class TableDefinitionParser
             if (StartsWithConstraintKeyword(trimmed))
                 return new ParsedTable { Schema = schema, Name = name, Columns = [], IsParseable = false };
 
-            if (trimmed[0] != '"')
-                return new ParsedTable { Schema = schema, Name = name, Columns = [], IsParseable = false };
-
             var column = ParseColumn(trimmed);
             if (column is null)
                 return new ParsedTable { Schema = schema, Name = name, Columns = [], IsParseable = false };
@@ -82,19 +74,26 @@ public static class TableDefinitionParser
 
     private static ParsedColumn? ParseColumn(string text)
     {
-        var nameEnd = ReadQuotedIdentifierEnd(text);
-        if (nameEnd < 0)
+        var tokens = SqlTokenizer.Tokenize(text);
+
+        var pos = 0;
+        while (pos < tokens.Count && (tokens[pos].Kind == SqlTokenKind.Whitespace || tokens[pos].IsComment))
+            pos++;
+
+        if (pos >= tokens.Count || tokens[pos].Kind != SqlTokenKind.QuotedIdentifier)
             return null;
 
-        var name = UnquoteIdentifier(text[..(nameEnd + 1)]);
-        var definition = text[(nameEnd + 1)..].Trim();
+        var nameToken = tokens[pos];
+        var name = UnquoteIdentifier(nameToken.Text);
+        var definitionStart = nameToken.Start + nameToken.Length;
+        var definition = text[definitionStart..].TrimStart();
         if (definition.Length == 0)
             return null;
 
-        var clauses = ScanClauses(definition);
+        var clauses = ScanClauses(tokens, pos + 1);
 
-        var typeEnd = clauses.Count > 0 ? clauses[0].Start : definition.Length;
-        var dataType = definition[..typeEnd].Trim();
+        var typeEnd = clauses.Count > 0 ? clauses[0].Start : text.Length;
+        var dataType = text[definitionStart..typeEnd].Trim();
 
         var notNull = false;
         string? defaultValue = null;
@@ -104,8 +103,8 @@ public static class TableDefinitionParser
         for (var i = 0; i < clauses.Count; i++)
         {
             var (keyword, start) = clauses[i];
-            var end = i + 1 < clauses.Count ? clauses[i + 1].Start : definition.Length;
-            var segment = definition[start..end].Trim();
+            var end = i + 1 < clauses.Count ? clauses[i + 1].Start : text.Length;
+            var segment = text[start..end].Trim();
 
             switch (keyword)
             {
@@ -116,10 +115,10 @@ public static class TableDefinitionParser
                     notNull = false;
                     break;
                 case "DEFAULT":
-                    defaultValue = segment["DEFAULT".Length..].Trim();
+                    defaultValue = segment[keyword.Length..].Trim();
                     break;
                 case "COLLATE":
-                    collation = segment["COLLATE".Length..].Trim();
+                    collation = segment[keyword.Length..].Trim();
                     break;
                 case "GENERATED":
                     identity = segment;
@@ -143,94 +142,57 @@ public static class TableDefinitionParser
     /// Returns the clause keywords found at the top level of a column definition
     /// (outside quotes and parentheses), with their start offsets, in order.
     /// </summary>
-    private static List<(string Keyword, int Start)> ScanClauses(string definition)
+    private static List<(string Keyword, int Start)> ScanClauses(IReadOnlyList<SqlToken> tokens, int startTokenIndex)
     {
         var results = new List<(string, int)>();
         var depth = 0;
-        var inSingle = false;
-        var inDouble = false;
 
-        for (var i = 0; i < definition.Length; i++)
+        for (var i = startTokenIndex; i < tokens.Count; i++)
         {
-            var c = definition[i];
+            var token = tokens[i];
 
-            if (inSingle)
+            if (token.Kind == SqlTokenKind.Symbol && token.Text == "(")
             {
-                if (c == '\'') inSingle = false;
+                depth++;
                 continue;
             }
 
-            if (inDouble)
+            if (token.Kind == SqlTokenKind.Symbol && token.Text == ")")
             {
-                if (c == '"') inDouble = false;
+                if (depth > 0)
+                    depth--;
                 continue;
             }
 
-            switch (c)
-            {
-                case '\'': inSingle = true; continue;
-                case '"': inDouble = true; continue;
-                case '(': depth++; continue;
-                case ')': depth--; continue;
-            }
-
-            if (depth != 0)
+            if (depth != 0 || token.Kind != SqlTokenKind.Word)
                 continue;
+
+            // Handle NOT NULL as a single two-word clause and skip the NULL token.
+            if (token.Text.Equals("NOT", StringComparison.OrdinalIgnoreCase))
+            {
+                var next = i + 1;
+                while (next < tokens.Count && (tokens[next].Kind == SqlTokenKind.Whitespace || tokens[next].IsComment))
+                    next++;
+
+                if (next < tokens.Count && tokens[next].Kind == SqlTokenKind.Word && tokens[next].Text.Equals("NULL", StringComparison.OrdinalIgnoreCase))
+                {
+                    results.Add(("NOT NULL", token.Start));
+                    i = next;
+                    continue;
+                }
+            }
 
             foreach (var keyword in ClauseKeywords)
             {
-                if (MatchesWordAt(definition, i, keyword))
+                if (token.Text.Equals(keyword, StringComparison.OrdinalIgnoreCase))
                 {
-                    // Avoid double-matching "NULL" when it is part of "NOT NULL".
-                    if (keyword == "NULL" && results.Count > 0 && results[^1].Item1 == "NOT NULL")
-                    {
-                        var prevEnd = results[^1].Item2 + "NOT NULL".Length;
-                        if (i < prevEnd)
-                            break;
-                    }
-
-                    results.Add((keyword, i));
+                    results.Add((keyword, token.Start));
                     break;
                 }
             }
         }
 
         return results;
-    }
-
-    private static string SkipLeadingNoise(string text)
-    {
-        text = text.TrimStart();
-
-        while (true)
-        {
-            if (MatchesWordAt(text, 0, "IF NOT EXISTS"))
-                text = text["IF NOT EXISTS".Length..].TrimStart();
-            else if (MatchesWordAt(text, 0, "ONLY"))
-                text = text["ONLY".Length..].TrimStart();
-            else
-                break;
-        }
-
-        return text;
-    }
-
-    private static bool MatchesWordAt(string text, int index, string word)
-    {
-        if (index + word.Length > text.Length)
-            return false;
-
-        if (!string.Equals(text.Substring(index, word.Length), word, StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        if (index > 0 && (char.IsLetterOrDigit(text[index - 1]) || text[index - 1] == '_'))
-            return false;
-
-        var after = index + word.Length;
-        if (after < text.Length && (char.IsLetterOrDigit(text[after]) || text[after] == '_'))
-            return false;
-
-        return true;
     }
 
     private static bool StartsWithConstraintKeyword(string text)
@@ -240,36 +202,22 @@ public static class TableDefinitionParser
             "CONSTRAINT", "PRIMARY", "UNIQUE", "CHECK", "FOREIGN", "EXCLUDE", "LIKE"
         ];
 
+        var tokens = SqlTokenizer.Tokenize(text);
+        var pos = 0;
+        while (pos < tokens.Count && (tokens[pos].Kind == SqlTokenKind.Whitespace || tokens[pos].IsComment))
+            pos++;
+
+        if (pos >= tokens.Count || tokens[pos].Kind != SqlTokenKind.Word)
+            return false;
+
+        var first = tokens[pos].Text;
         foreach (var keyword in keywords)
         {
-            if (MatchesWordAt(text, 0, keyword))
+            if (first.Equals(keyword, StringComparison.OrdinalIgnoreCase))
                 return true;
         }
 
         return false;
-    }
-
-    private static int ReadQuotedIdentifierEnd(string text)
-    {
-        if (text.Length == 0 || text[0] != '"')
-            return -1;
-
-        for (var i = 1; i < text.Length; i++)
-        {
-            if (text[i] != '"')
-                continue;
-
-            // Escaped quote ("") inside the identifier.
-            if (i + 1 < text.Length && text[i + 1] == '"')
-            {
-                i++;
-                continue;
-            }
-
-            return i;
-        }
-
-        return -1;
     }
 
     private static string UnquoteIdentifier(string quoted)
@@ -278,24 +226,6 @@ public static class TableDefinitionParser
             return quoted[1..^1].Replace("\"\"", "\"");
 
         return quoted;
-    }
-
-    private static int IndexOfWord(string text, string word, int start)
-    {
-        var i = start;
-        while (i >= 0 && i <= text.Length - word.Length)
-        {
-            var found = text.IndexOf(word, i, StringComparison.OrdinalIgnoreCase);
-            if (found < 0)
-                return -1;
-
-            if (MatchesWordAt(text, found, word))
-                return found;
-
-            i = found + 1;
-        }
-
-        return -1;
     }
 
     private static (string Schema, string Name) SplitQualifiedName(string qualifiedName)

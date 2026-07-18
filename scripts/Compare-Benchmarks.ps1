@@ -6,7 +6,13 @@ param(
     [string] $CurrentDir,
 
     [Parameter()]
-    [string] $OutputPath = "benchmark-comparison.md"
+    [string] $OutputPath = "benchmark-comparison.md",
+
+    [Parameter()]
+    [double] $MaxMeanRegression = 1.10,
+
+    [Parameter()]
+    [double] $MaxAllocatedRegression = 1.20
 )
 
 function ParseValue($text)
@@ -50,10 +56,14 @@ foreach ($file in $baselineFiles) { $baselineByName[$file.Name] = $file.FullName
 $currentByName = @{}
 foreach ($file in $currentFiles) { $currentByName[$file.Name] = $file.FullName }
 
+$hasRegression = $false
+
 $lines = @()
 $lines += "# Benchmark comparison"
 $lines += ""
 $lines += "Comparing current branch results in ``$CurrentDir`` against baseline in ``$BaselineDir``."
+$lines += ""
+$lines += "Thresholds: mean <= $($MaxMeanRegression.ToString('P0')), allocated <= $($MaxAllocatedRegression.ToString('P0'))."
 $lines += ""
 $lines += "| Benchmark | Method | Baseline Mean | Current Mean | Mean Ratio | Baseline Allocated | Current Allocated | Allocated Ratio |"
 $lines += "|---|---|---|---|---|---|---|---|"
@@ -79,17 +89,39 @@ foreach ($fileName in ($currentByName.Keys | Sort-Object))
         $baseAlloc = ToBaseValue (ParseValue $baseRow.Allocated)
         $curAlloc = ToBaseValue (ParseValue $currentRow.Allocated)
 
-        $meanRatio = if ($baseMean -and $curMean) { "{0:P1}" -f ($curMean / $baseMean) } else { "" }
-        $allocRatio = if ($baseAlloc -and $curAlloc) { "{0:P1}" -f ($curAlloc / $baseAlloc) } else { "" }
+        $meanRatioNum = if ($baseMean -and $curMean) { $curMean / $baseMean } else { $null }
+        $allocRatioNum = if ($baseAlloc -and $curAlloc) { $curAlloc / $baseAlloc } else { $null }
 
-        $lines += "| $fileName | $method | $($baseRow.Mean) | $($currentRow.Mean) | $meanRatio | $($baseRow.Allocated) | $($currentRow.Allocated) | $allocRatio |"
+        $meanRatio = if ($meanRatioNum) { "{0:P1}" -f $meanRatioNum } else { "" }
+        $allocRatio = if ($allocRatioNum) { "{0:P1}" -f $allocRatioNum } else { "" }
+
+        if ($meanRatioNum -and $meanRatioNum -gt $MaxMeanRegression)
+        {
+            $hasRegression = $true
+            $lines += "| $fileName | $method | $($baseRow.Mean) | $($currentRow.Mean) | **$meanRatio** | $($baseRow.Allocated) | $($currentRow.Allocated) | $allocRatio |"
+        }
+        elseif ($allocRatioNum -and $allocRatioNum -gt $MaxAllocatedRegression)
+        {
+            $hasRegression = $true
+            $lines += "| $fileName | $method | $($baseRow.Mean) | $($currentRow.Mean) | $meanRatio | $($baseRow.Allocated) | $($currentRow.Allocated) | **$allocRatio** |"
+        }
+        else
+        {
+            $lines += "| $fileName | $method | $($baseRow.Mean) | $($currentRow.Mean) | $meanRatio | $($baseRow.Allocated) | $($currentRow.Allocated) | $allocRatio |"
+        }
     }
 }
 
-if ($lines.Length -eq 6)
+if ($lines.Length -eq 8)
 {
     $lines += "| No matching benchmark reports found. | | | | | | | |"
 }
 
 $lines | Out-File -FilePath $OutputPath -Encoding utf8
 Write-Host "Comparison table written to $OutputPath"
+
+if ($hasRegression)
+{
+    Write-Error "Performance regression detected. See $OutputPath for details."
+    exit 1
+}

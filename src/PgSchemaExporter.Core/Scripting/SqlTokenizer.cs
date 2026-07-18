@@ -913,4 +913,409 @@ public static class SqlTokenizer
 
         return -1;
     }
+
+    /// <summary>
+    /// Tokenizes a SQL statement into a sequence of <see cref="SqlToken"/> values.
+    /// This is the foundation for unifying parser logic: every parser can consume
+    /// the same token stream instead of re-implementing quote/comment/dollar-quoting
+    /// awareness.
+    /// </summary>
+    public static IReadOnlyList<SqlToken> Tokenize(string sql)
+    {
+        var tokens = new List<SqlToken>();
+        var i = 0;
+
+        while (i < sql.Length)
+        {
+            var c = sql[i];
+
+            if (char.IsWhiteSpace(c))
+            {
+                var start = i;
+                while (i < sql.Length && char.IsWhiteSpace(sql[i]))
+                    i++;
+                tokens.Add(new SqlToken(SqlTokenKind.Whitespace, sql[start..i], start, i - start));
+                continue;
+            }
+
+            if (c == '-' && i + 1 < sql.Length && sql[i + 1] == '-')
+            {
+                var start = i;
+                i += 2;
+                while (i < sql.Length && sql[i] != '\n')
+                    i++;
+                tokens.Add(new SqlToken(SqlTokenKind.LineComment, sql[start..i], start, i - start));
+                continue;
+            }
+
+            if (c == '/' && i + 1 < sql.Length && sql[i + 1] == '*')
+            {
+                var start = i;
+                i += 2;
+                while (i + 1 < sql.Length && !(sql[i] == '*' && sql[i + 1] == '/'))
+                    i++;
+                if (i + 1 < sql.Length)
+                    i += 2;
+                tokens.Add(new SqlToken(SqlTokenKind.BlockComment, sql[start..i], start, i - start));
+                continue;
+            }
+
+            if (c == '\'')
+            {
+                var start = i;
+                i++;
+                while (i < sql.Length)
+                {
+                    if (sql[i] == '\'')
+                    {
+                        if (i + 1 < sql.Length && sql[i + 1] == '\'')
+                        {
+                            i += 2;
+                            continue;
+                        }
+                        i++;
+                        break;
+                    }
+                    i++;
+                }
+                tokens.Add(new SqlToken(SqlTokenKind.StringLiteral, sql[start..i], start, i - start));
+                continue;
+            }
+
+            if (c == '"')
+            {
+                var start = i;
+                i++;
+                while (i < sql.Length)
+                {
+                    if (sql[i] == '"')
+                    {
+                        if (i + 1 < sql.Length && sql[i + 1] == '"')
+                        {
+                            i += 2;
+                            continue;
+                        }
+                        i++;
+                        break;
+                    }
+                    i++;
+                }
+                tokens.Add(new SqlToken(SqlTokenKind.QuotedIdentifier, sql[start..i], start, i - start));
+                continue;
+            }
+
+            if (c == '$')
+            {
+                var tag = TryReadDollarTag(sql, i);
+                if (tag is not null)
+                {
+                    var start = i;
+                    var close = sql.IndexOf(tag, i + tag.Length, StringComparison.Ordinal);
+                    if (close >= 0)
+                    {
+                        i = close + tag.Length;
+                        tokens.Add(new SqlToken(SqlTokenKind.DollarQuoted, sql[start..i], start, i - start));
+                        continue;
+                    }
+                }
+            }
+
+            if (IsIdentifierChar(c))
+            {
+                var start = i;
+                while (i < sql.Length && IsIdentifierChar(sql[i]))
+                    i++;
+                tokens.Add(new SqlToken(SqlTokenKind.Word, sql[start..i], start, i - start));
+                continue;
+            }
+
+            if (c is '(' or ')' or ',' or ';' or '.')
+            {
+                tokens.Add(new SqlToken(SqlTokenKind.Symbol, sql[i..(i + 1)], i, 1));
+                i++;
+                continue;
+            }
+
+            tokens.Add(new SqlToken(SqlTokenKind.Other, sql[i..(i + 1)], i, 1));
+            i++;
+        }
+
+        return tokens;
+    }
+
+    /// <summary>
+    /// Finds the index of the first token that starts the <paramref name="keyword"/>
+    /// sequence. Multi-word keywords (e.g. "FOREIGN KEY") are matched across
+    /// whitespace/comments. Returns -1 if not found.
+    /// </summary>
+    public static int FindKeyword(IReadOnlyList<SqlToken> tokens, string keyword, int startToken = 0)
+    {
+        var words = keyword.Split([' '], StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length == 0)
+            return -1;
+
+        for (var i = startToken; i < tokens.Count; i++)
+        {
+            if (tokens[i].Kind != SqlTokenKind.Word)
+                continue;
+            if (!tokens[i].Text.Equals(words[0], StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var pos = i + 1;
+            var matched = true;
+
+            for (var k = 1; k < words.Length; k++)
+            {
+                // Skip whitespace/comments between words.
+                while (pos < tokens.Count && (tokens[pos].Kind == SqlTokenKind.Whitespace || tokens[pos].IsComment))
+                    pos++;
+
+                if (pos >= tokens.Count || tokens[pos].Kind != SqlTokenKind.Word || !tokens[pos].Text.Equals(words[k], StringComparison.OrdinalIgnoreCase))
+                {
+                    matched = false;
+                    break;
+                }
+
+                pos++;
+            }
+
+            if (matched)
+                return i;
+        }
+
+        return -1;
+    }
+
+    /// <summary>
+    /// Reads a possibly schema-qualified identifier starting at <paramref name="startTokenIndex"/>,
+    /// skipping whitespace and comments. Returns the identifier text (with any quotes preserved)
+    /// and the index of the first token after the identifier.
+    /// </summary>
+    public static string? ReadIdentifier(IReadOnlyList<SqlToken> tokens, int startTokenIndex, out int afterTokenIndex)
+    {
+        afterTokenIndex = startTokenIndex;
+        var pos = SkipTrivia(tokens, startTokenIndex);
+
+        var sb = new StringBuilder();
+        var first = true;
+
+        while (pos < tokens.Count)
+        {
+            var token = tokens[pos];
+
+            if (token.Kind == SqlTokenKind.Word || token.Kind == SqlTokenKind.QuotedIdentifier)
+            {
+                if (!first)
+                    return null; // a second part without a separating dot
+                sb.Append(token.Text);
+                pos++;
+                first = false;
+                continue;
+            }
+
+            if (token.Kind == SqlTokenKind.Symbol && token.Text == ".")
+            {
+                if (first || pos + 1 >= tokens.Count)
+                    return null;
+                var next = tokens[pos + 1];
+                if (next.Kind != SqlTokenKind.Word && next.Kind != SqlTokenKind.QuotedIdentifier)
+                    return null;
+                sb.Append('.');
+                sb.Append(next.Text);
+                pos += 2;
+                continue;
+            }
+
+            break;
+        }
+
+        if (sb.Length == 0)
+            return null;
+
+        afterTokenIndex = pos;
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Returns the text position immediately following <paramref name="keyword"/>
+    /// and any leading "IF NOT EXISTS" / "ONLY" noise. Returns -1 if the keyword
+    /// is not found or no identifier follows it.
+    /// </summary>
+    public static int ReadNameAfter(IReadOnlyList<SqlToken> tokens, string keyword, out string? name)
+    {
+        name = null;
+        var keywordIndex = FindKeyword(tokens, keyword);
+        if (keywordIndex < 0)
+            return -1;
+
+        var pos = keywordIndex + 1;
+        pos = SkipLeadingNoise(tokens, pos);
+
+        var identifier = ReadIdentifier(tokens, pos, out var afterIdentifier);
+        if (identifier is null)
+            return -1;
+
+        name = identifier;
+        return tokens[afterIdentifier - 1].Start + tokens[afterIdentifier - 1].Length;
+    }
+
+    /// <summary>
+    /// Finds the start character index of the word <paramref name="keyword"/>
+    /// in <paramref name="sql"/>, returning -1 if not found.
+    /// </summary>
+    public static int FindKeyword(string sql, string keyword)
+    {
+        var tokens = Tokenize(sql);
+        var index = FindKeyword(tokens, keyword);
+        return index < 0 ? -1 : tokens[index].Start;
+    }
+
+    /// <summary>
+    /// Reads a possibly schema-qualified identifier that follows <paramref name="keyword"/>
+    /// in <paramref name="sql"/>, skipping leading noise such as "IF NOT EXISTS" or "ONLY".
+    /// </summary>
+    public static string? ReadNameAfter(string sql, string keyword)
+    {
+        var tokens = Tokenize(sql);
+        ReadNameAfter(tokens, keyword, out var name);
+        return name;
+    }
+
+    /// <summary>
+    /// Finds the first '(' token at or after <paramref name="startTokenIndex"/> and
+    /// returns the substring between it and its matching ')'.
+    /// </summary>
+    public static string? ReadParenthesized(IReadOnlyList<SqlToken> tokens, string sql, int startTokenIndex, out int afterTokenIndex)
+    {
+        afterTokenIndex = startTokenIndex;
+
+        for (var i = startTokenIndex; i < tokens.Count; i++)
+        {
+            if (tokens[i].Kind == SqlTokenKind.Symbol && tokens[i].Text == "(")
+            {
+                var open = tokens[i].Start;
+                var close = FindMatchingParen(sql, open);
+                if (close < 0)
+                    return null;
+
+                afterTokenIndex = i + 1;
+                while (afterTokenIndex < tokens.Count && (tokens[afterTokenIndex].Kind == SqlTokenKind.Whitespace || tokens[afterTokenIndex].IsComment))
+                    afterTokenIndex++;
+
+                return sql[(open + 1)..close];
+            }
+        }
+
+        return null;
+    }
+
+    private static int SkipTrivia(IReadOnlyList<SqlToken> tokens, int start)
+    {
+        var pos = start;
+        while (pos < tokens.Count && (tokens[pos].Kind == SqlTokenKind.Whitespace || tokens[pos].IsComment))
+            pos++;
+        return pos;
+    }
+
+    private static int SkipNoise(IReadOnlyList<SqlToken> tokens, int start)
+    {
+        var pos = SkipTrivia(tokens, start);
+        while (pos < tokens.Count)
+        {
+            var token = tokens[pos];
+
+            if (token.Kind == SqlTokenKind.Word && token.Text.Equals("ONLY", StringComparison.OrdinalIgnoreCase))
+            {
+                pos = SkipTrivia(tokens, pos + 1);
+                continue;
+            }
+
+            // "IF NOT EXISTS"
+            if (token.Kind == SqlTokenKind.Word && token.Text.Equals("IF", StringComparison.OrdinalIgnoreCase)
+                && NextNonNoise(tokens, pos + 1) is { } notPos
+                && tokens[notPos].Kind == SqlTokenKind.Word && tokens[notPos].Text.Equals("NOT", StringComparison.OrdinalIgnoreCase)
+                && NextNonNoise(tokens, notPos + 1) is { } existsPos
+                && tokens[existsPos].Kind == SqlTokenKind.Word && tokens[existsPos].Text.Equals("EXISTS", StringComparison.OrdinalIgnoreCase))
+            {
+                pos = SkipTrivia(tokens, existsPos + 1);
+                continue;
+            }
+
+            break;
+        }
+
+        return pos;
+    }
+
+    private static int SkipLeadingNoise(IReadOnlyList<SqlToken> tokens, int start)
+    {
+        var pos = SkipTrivia(tokens, start);
+        while (pos < tokens.Count)
+        {
+            var token = tokens[pos];
+
+            if (token.Kind == SqlTokenKind.Word &&
+                (token.Text.Equals("ONLY", StringComparison.OrdinalIgnoreCase) ||
+                 token.Text.Equals("CONCURRENTLY", StringComparison.OrdinalIgnoreCase)))
+            {
+                pos = SkipTrivia(tokens, pos + 1);
+                continue;
+            }
+
+            // "IF NOT EXISTS"
+            if (token.Kind == SqlTokenKind.Word && token.Text.Equals("IF", StringComparison.OrdinalIgnoreCase)
+                && NextNonTrivia(tokens, pos + 1) is { } notPos
+                && tokens[notPos].Text.Equals("NOT", StringComparison.OrdinalIgnoreCase)
+                && NextNonTrivia(tokens, notPos + 1) is { } existsPos
+                && tokens[existsPos].Text.Equals("EXISTS", StringComparison.OrdinalIgnoreCase))
+            {
+                pos = SkipTrivia(tokens, existsPos + 1);
+                continue;
+            }
+
+            break;
+        }
+
+        return pos;
+    }
+
+    private static int? NextNonTrivia(IReadOnlyList<SqlToken> tokens, int start)
+    {
+        var pos = start;
+        while (pos < tokens.Count && (tokens[pos].Kind == SqlTokenKind.Whitespace || tokens[pos].IsComment))
+            pos++;
+
+        return pos < tokens.Count ? pos : (int?)null;
+    }
+
+    private static int? NextNonNoise(IReadOnlyList<SqlToken> tokens, int start)
+    {
+        var pos = start;
+        while (pos < tokens.Count && (tokens[pos].Kind == SqlTokenKind.Whitespace || tokens[pos].IsComment))
+            pos++;
+
+        return pos < tokens.Count ? pos : (int?)null;
+    }
+
+    private static bool IsIdentifierChar(char c) => char.IsLetterOrDigit(c) || c == '_' || c == '$';
+}
+
+public enum SqlTokenKind
+{
+    Whitespace,
+    LineComment,
+    BlockComment,
+    StringLiteral,
+    QuotedIdentifier,
+    DollarQuoted,
+    Word,
+    Symbol,
+    Other
+}
+
+public readonly record struct SqlToken(SqlTokenKind Kind, string Text, int Start, int Length)
+{
+    public bool IsComment => Kind is SqlTokenKind.LineComment or SqlTokenKind.BlockComment;
+    public ReadOnlySpan<char> Span => Text.AsSpan();
+    public override string ToString() => Text;
 }

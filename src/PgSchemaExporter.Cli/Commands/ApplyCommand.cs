@@ -39,13 +39,14 @@ public sealed class ApplyCommand : ICommand
         {
             ConnectionString = applyArgs.ConnectionString,
             Rollback = applyArgs.Rollback,
-            DryRun = applyArgs.DryRun
+            DryRun = applyArgs.DryRun,
+            Resume = applyArgs.Resume
         }, context.Progress, context.Logger);
 
         if (result.DryRun)
             Console.WriteLine($"Dry run complete. {result.Skipped} destructive statement(s) would be skipped (safe plan).");
         else
-            Console.WriteLine($"Applied {result.Executed} statement(s). Skipped {result.Skipped}.");
+            Console.WriteLine($"Applied {result.Executed} statement(s). Skipped {result.Skipped}. Resumed {result.Resumed}.");
 
         return 0;
     }

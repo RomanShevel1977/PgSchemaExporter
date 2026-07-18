@@ -12,7 +12,7 @@ namespace PgSchemaExporter.Core.Metadata;
 
 public sealed class PostgresMetadataProvider : IMetadataProvider
 {
-    private static readonly ConcurrentDictionary<string, bool> PolicyDefFunctionExistsCache = new();
+    private readonly ConcurrentDictionary<string, bool> _policyDefFunctionExistsCache = new();
 
     private const int MaxParallelQueries = 8;
 
@@ -44,7 +44,7 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
         return model;
     }
 
-    private static async Task<DatabaseModel> LoadSequentialAsync(
+    private async Task<DatabaseModel> LoadSequentialAsync(
         string connectionString,
         ExportOptions options,
         IProgressReporter progress,
@@ -95,7 +95,7 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
         };
     }
 
-    private static async Task<DatabaseModel> LoadParallelAsync(
+    private async Task<DatabaseModel> LoadParallelAsync(
         string connectionString,
         ExportOptions options,
         IProgressReporter progress,
@@ -923,7 +923,7 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
             .ToList();
     }
 
-    private static async Task<IReadOnlyList<DbPolicy>> GetPoliciesAsync(NpgsqlConnection connection, ExportOptions options, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<DbPolicy>> GetPoliciesAsync(NpgsqlConnection connection, ExportOptions options, CancellationToken cancellationToken)
     {
         var usePolicyDef = await PolicyDefFunctionExistsAsync(connection, cancellationToken);
 
@@ -987,10 +987,10 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
         return result;
     }
 
-    private static async Task<bool> PolicyDefFunctionExistsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    private async Task<bool> PolicyDefFunctionExistsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
         var key = connection.ConnectionString;
-        if (PolicyDefFunctionExistsCache.TryGetValue(key, out var cached))
+        if (_policyDefFunctionExistsCache.TryGetValue(key, out var cached))
             return cached;
 
         const string sql = @"
@@ -1005,7 +1005,7 @@ public sealed class PostgresMetadataProvider : IMetadataProvider
         await using var command = new NpgsqlCommand(sql, connection);
         var result = await command.ExecuteScalarAsync(cancellationToken);
         var exists = result is bool b && b;
-        PolicyDefFunctionExistsCache.TryAdd(key, exists);
+        _policyDefFunctionExistsCache.TryAdd(key, exists);
         return exists;
     }
 
