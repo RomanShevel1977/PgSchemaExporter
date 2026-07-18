@@ -531,7 +531,7 @@ v2.0.0 is now released. It delivers the prioritized recommendations from `ASSESS
 
 </details>
 
-Latest changes: [release_notes_2.0.0.md](release_notes_2.0.0.md).
+Latest changes: [RELEASE_NOTES_2.0.0.md](RELEASE_NOTES_2.0.0.md).
 
 ---
 
