@@ -5,7 +5,8 @@
 
 > Make PostgreSQL behave like a real codebase.
 
-Git-native PostgreSQL schema management for development teams.
+Git-native PostgreSQL schema management.
+Designed for modern development workflows.
 
 ---
 
