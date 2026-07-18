@@ -485,7 +485,28 @@ See [Performance Refactoring Report](doc/Performance_Refactoring_Report_Full.md)
 
 ## Roadmap
 
-Next steps include full token-level SQL parsing unification, source-generated JSON serializers, benchmark baselines in CI, and continued live-schema performance tuning.
+v2.0.0 is now released. It delivers the prioritized recommendations from `ASSESSMENT_REPORT.md` and the CLI `ICommand` architecture refactor.
+
+### Completed in v2.0.0
+
+- CLI command handlers (`ICommand` / `CommandDispatcher`)
+- `ExportOptions` normalization without mutation (`EffectiveSchemas`)
+- Atomic `MigrationHistory.AppendAsync` writes
+- Source-generated JSON serializers (`PgSchemaExporterJsonContext`)
+- SQL identifier and timeout-value escaping
+- `CommandTimeout` and journal in `MigrationApplier`
+- Streaming dump reads in `DumpSplitter`
+- `SchemaDiffer` concurrency (`ConcurrentBag`) and `SqlTokenizer` performance
+- Benchmark suite (`PgSchemaExporter.Benchmarks`)
+- Full integration and unit test coverage (475 tests)
+- Solution file (`PgSchemaExporter.slnx`) and unified `2.0.0` version
+
+### Next steps
+
+- Full token-level SQL parsing unification across the splitter and migration generator.
+- Benchmark baselines in CI with automated regression detection.
+- Continued live-schema / metadata-query performance tuning.
+- Optional pluggable output backends (e.g., JSON manifest, streaming archive).
 
 <details>
 <summary>Full release history</summary>
@@ -506,10 +527,11 @@ Next steps include full token-level SQL parsing unification, source-generated JS
 * v1.7.0  Safety & CI/CD — drift detection, schema fingerprint validation, migration history tracking, GitHub Action drift workflow
 * v1.8.0  Production Features — declarative plan/apply workflow, online DDL (concurrent indexes), hazard warnings, lock/statement timeout configuration
 * v1.9.0  Developer Experience — ER-diagram visualization (Mermaid/Graphviz DOT), performance profiling, `--profile` flag
+* v2.0.0  Architecture & Prioritized Recommendations — CLI `ICommand` refactor, atomic migration history, source-generated JSON serializers, benchmark suite, full integration tests, SQL escaping/parameterization
 
 </details>
 
-Latest changes: [RELEASE_NOTES_1.9.0.md](RELEASE_NOTES_1.9.0.md).
+Latest changes: [release_notes_2.0.0.md](release_notes_2.0.0.md).
 
 ---
 
