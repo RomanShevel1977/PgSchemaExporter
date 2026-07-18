@@ -1435,6 +1435,6 @@ pgschema-export watch \
 
 - **[README.md](../README.md)**: Project overview and quick start
 - **[Performance Refactoring Report](Performance_Refactoring_Report_Full.md)**: Detailed benchmarks and optimization notes
-- **[RELEASE_NOTES_1.9.0.md](../RELEASE_NOTES_1.9.0.md)**: Detailed release notes for current version
+- **[RELEASE_NOTES_2.0.0.md](../RELEASE_NOTES_2.0.0.md)**: Detailed release notes for current version
 - **[PostgreSQL Documentation](https://www.postgresql.org/docs/)**
 - **[Npgsql Documentation](https://www.npgsql.org/doc/)**
