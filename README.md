@@ -145,6 +145,18 @@ See [USAGE_GUIDE.md](doc/USAGE_GUIDE.md) for the complete command reference.
 
 PgSchemaExporter is not the only tool that works with PostgreSQL schemas. Below is a comparison of common alternatives grouped by what they do best.
 
+### Competitors at a glance
+
+| Tool | Purpose |
+|------|---------|
+| pg_dump | Backup |
+| Flyway | Migrations |
+| Liquibase | Migrations |
+| Atlas | Declarative migrations |
+| **PgSchemaExporter** | Git-friendly schema representation |
+
+This table shows the core niche: PgSchemaExporter is not a backup tool or a generic migration runner — it turns your PostgreSQL schema into a reviewable, version-controlled representation, while still offering state-based diff and migration generation.
+
 ### Schema export & diff
 
 | Tool | Export | Dir-vs-dir diff | Live DB diff | Up/down migration | Git-native layout |
