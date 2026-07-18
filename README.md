@@ -5,7 +5,7 @@
 
 > Make PostgreSQL behave like a real codebase.
 
-Git-native PostgreSQL schema exporter and `pg_dump` splitter.
+Git-native PostgreSQL schema management for development teams.
 
 ---
 
